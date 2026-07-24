@@ -7,7 +7,7 @@
     "test": "test"
   },
   "scripts": {
-    "test": "node test/pipeline.test.js && node test/io.test.js",
+    "test": "node test/pipeline.test.js && node test/io.test.js && node test/tabs.test.js",
     "test:ui": "node test/ui.test.mjs",
     "build": "node build.js",
     "serve": "python3 -m http.server 8123"

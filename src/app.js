@@ -135,6 +135,8 @@ function unfoldNow() {
     log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
   else if (layout.overflow)
     log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
+  if (layout.tabStats && (layout.tabStats.shortened || layout.tabStats.deleted))
+    log(`のりしろ干渉調整: ${layout.tabStats.shortened} 個を短縮 / ${layout.tabStats.deleted} 個を削除`, 'warn');
 
   // 3Dビューの辺色分け（折り=緑, 切り=赤）
   const ec = new Map();
@@ -145,10 +147,20 @@ function unfoldNow() {
   renderPreview();
 }
 
+// 折り線の破線設定（レーザーSVG / DXF に適用）
+function dashOpts() {
+  const dashed = $('foldStyle').value === 'dashed';
+  return {
+    dashed,
+    len: Math.max(0.2, parseFloat($('dashLen').value) || 3),
+    gap: Math.max(0, parseFloat($('dashGap').value) || 2),
+  };
+}
+
 function currentSVGs() {
   const mode = document.querySelector('input[name="mode"]:checked').value;
   if (mode === 'laser') {
-    return toLaserSVG(state.layout, { engrave: $('engrave').checked });
+    return toLaserSVG(state.layout, { engrave: $('engrave').checked, dash: dashOpts() });
   }
   return toPaperSVG(state.layout, { numbers: true });
 }
@@ -191,7 +203,7 @@ function downloadSVG() {
 }
 function downloadDXF() {
   if (!state.layout) return;
-  const dxf = toDXF(state.layout, { scoreFolds: true });
+  const dxf = toDXF(state.layout, { scoreFolds: true, dash: dashOpts() });
   download(`${state.modelName}_laser.dxf`, dxf, 'application/dxf');
 }
 
@@ -244,6 +256,13 @@ $('paper').addEventListener('change', () => {
   $('customSize').hidden = $('paper').value !== 'custom';
   if (state.triMesh) unfoldNow();
 });
+
+// 折り線の破線設定はレンダリングのみに影響（再展開は不要）
+['foldStyle', 'dashLen', 'dashGap'].forEach((id) =>
+  $(id).addEventListener('change', () => {
+    $('dashRow').hidden = $('foldStyle').value !== 'dashed';
+    renderPreview();
+  }));
 
 // 初期表示: 立方体
 loadTriangleSoup(cube(40), 'cube');

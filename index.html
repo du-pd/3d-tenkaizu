@@ -214,6 +214,23 @@
       <div class="hint">レーザー: 切断線=赤(CUT)／折り筋=青(SCORE)で色・レイヤー分離。SVG（Inkscapeレイヤー付き）とDXF（レイヤーCUT/SCORE・mm・Y上向き）を出力できます。</div>
 
       <fieldset>
+        <legend>折り線（レーザー / DXF）</legend>
+        <label>スタイル</label>
+        <select id="foldStyle">
+          <option value="solid">実線</option>
+          <option value="dashed">破線（実線分に分割）</option>
+        </select>
+        <div class="row customsize" id="dashRow" hidden>
+          <span class="mul">破線長</span>
+          <input type="number" id="dashLen" value="3" min="0.2" step="0.5" aria-label="破線長mm">
+          <span class="mul">間隔</span>
+          <input type="number" id="dashGap" value="2" min="0" step="0.5" aria-label="間隔mm">
+          <span class="mul">mm</span>
+        </div>
+        <div class="hint">破線はレーザー機での実線化を避けるため、実際の短い線分に分割して出力します。</div>
+      </fieldset>
+
+      <fieldset>
         <legend>用紙サイズ</legend>
         <select id="paper">
           <option value="a4">A4（210 × 297 mm）</option>
