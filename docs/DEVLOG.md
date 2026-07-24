@@ -63,11 +63,22 @@ npm run serve     # http://localhost:8123 で配信
 - [x] 折り線の実線/破線設定。破線は SVG/DXF とも実際の短い線分に分割（mm指定・中央揃え・最低1本）。
 - [x] テスト追加: 干渉不変条件・fitTabHeight・付け根線種・破線長/間隔（test/tabs.test.js）。
 
+## 完了（レビュー中優先度の残り, PR #5）
+- [x] スマホで3Dプレビュー高さ0 → `.panel.p3d { flex:0 0 360px }` で修正。UIテストで
+      390px幅時の canvas 高さ>0 を検証。
+- [x] CIで `npm test` を実行（pages.yml のビルド前）。テスト失敗時はデプロイされない。
+- [x] アクセシビリティ: label の for/id 関連付け、ログ欄 `role=log aria-live=polite`、
+      canvas に `role=img` と説明 aria-label。
+- [x] レーザーモードの凡例を CUT / SCORE / ENGRAVE に切替（#legend2d をモードで更新）。
+- [x] 大モデル対策（簡易）: 三角形数の警告（>4万で注意, >20万で強警告）＋処理時間ログ。
+      ※Web Worker / 進捗バー / キャンセルは未実装（下記 TODO）。単一ファイル配信との両立に
+      ビルド構成変更が要るため、実データで実際に遅い場合に着手する方針。
+- [x] のりしろクリアランス(kerf)設定を追加（既定0.3mm。付け根は動かさず外周を控える）。
+
 ## 次にやる候補（TODO）
 - [ ] 【要確認】新DXFが Illustrator 実機で開けるか（ユーザー確認待ち）。
-- [ ] レビュー指摘の残り: スマホで3Dプレビュー高さ0（CSS）/ CIでnpm test実行 / アクセシビリティ
-      (label for・aria-live・canvas代替) / レーザーモードの凡例をCUT/SCORE/ENGRAVEに / 大モデル対策
-      (面数警告・Web Worker・進捗) / のりしろクリアランス(kerf)設定。
+- [ ] 大モデルの本格対策: Web Worker で展開計算をオフスレッド化＋進捗＋キャンセル
+      （単一ファイル配信のためワーカーをBlobインライン化するビルド対応が必要）。
 - [ ] v1.0: 3Dビューで辺クリック→「切る/繋ぐ」トグル→展開図リアルタイム更新の手動編集UI。
 - [ ] 実データ（Rhino由来STL）での検証。
 - [ ] 重なり分割の質改善（貪欲→パーツ数削減 or ユーザー指定のカット辺優先）。
@@ -77,3 +88,4 @@ npm run serve     # http://localhost:8123 で配信
 - PR #2: DXFをIllustrator互換フルR12へ / 「印刷範囲に自動フィット」名称修正（merged）
 - PR #3: 開発ログ追加（merged）
 - PR #4: のりしろ干渉解決・付け根SCORE/外周CUT・折り線破線分割 + テスト（merged）
+- PR #5: スマホ3D修正 / CIテスト / a11y / レーザー凡例 / 大モデル警告+時間 / クリアランス（merged）

@@ -12,6 +12,7 @@ export function buildLayout(mesh, unfold, opts = {}) {
   const tabHeight = opts.tabHeight ?? 5; // mm
   const tabAngle = (opts.tabAngle ?? 45) * (Math.PI / 180);
   const minTabHeight = opts.minTabHeight ?? 1.5; // mm これ未満に詰まったら削除
+  const clearance = Math.max(0, opts.clearance ?? 0); // mm 加工余裕(kerf)
   const addTabs = opts.tabs !== false;
   const { faces } = mesh;
   const { facePart, parts, foldEdges, cutEdges } = unfold;
@@ -78,7 +79,7 @@ export function buildLayout(mesh, unfold, opts = {}) {
   // のりしろ干渉の解決（短縮／削除）
   let tabShortened = 0, tabDeleted = 0;
   for (const pd of partData) {
-    const r = resolveTabInterference(pd, { minTabHeight });
+    const r = resolveTabInterference(pd, { minTabHeight, clearance });
     tabShortened += r.shortened;
     tabDeleted += r.deleted;
   }
@@ -128,6 +129,7 @@ export function makeTabPoly(p, q, faceCoords, height, angle) {
 // 詰めても最小高さ未満なら削除し、その辺はCUTに戻す。
 function resolveTabInterference(pd, opts) {
   const minH = opts.minTabHeight;
+  const clearance = opts.clearance ?? 0;
   const bodyPolys = pd.polys.map((p) => ({ fi: p.face, coords: p.coords }));
   const kept = [];
   let shortened = 0, deleted = 0;
@@ -141,8 +143,10 @@ function resolveTabInterference(pd, opts) {
       { h0: tab.h0, minH, angle: tab.angle });
 
     if (h != null) {
-      tab.outer = makeTabPoly(tab.base[0], tab.base[1], tab.faceCoords, h, tab.angle);
-      tab.height = h;
+      // クリアランス分だけ控えて描く（焼け幅の余裕。付け根は動かさない）
+      const drawH = Math.max(0.5, h - clearance);
+      tab.outer = makeTabPoly(tab.base[0], tab.base[1], tab.faceCoords, drawH, tab.angle);
+      tab.height = drawH;
       delete tab.faceCoords; // もう不要（後段の平行移動対象から外す）
       if (h < tab.h0 - 1e-6) shortened++;
       kept.push(tab);

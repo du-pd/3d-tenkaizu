@@ -82,6 +82,14 @@ await page.selectOption('#paper', 'a4'); await page.waitForTimeout(200);
 const custHidden = await page.$eval('#customSize', (el) => getComputedStyle(el).display === 'none');
 console.log('custom fields hidden on A4:', custHidden);
 
+// スマホ幅で3Dプレビュー(canvas)の高さが0にならないこと(#4)
+await page.setViewportSize({ width: 390, height: 844 });
+await page.waitForTimeout(300);
+const canvasH = await page.$eval('#view3d', (c) => c.getBoundingClientRect().height);
+console.log('mobile canvas height:', Math.round(canvasH), canvasH > 50 ? 'ok' : 'FAIL');
+if (canvasH <= 50) errors.push('mobile canvas height collapsed: ' + canvasH);
+await page.setViewportSize({ width: 1400, height: 900 });
+
 await page.screenshot({ path: 'scratch/ui.png', fullPage: false });
 
 console.log('\n=== console errors:', errors.length, '===');

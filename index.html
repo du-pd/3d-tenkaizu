@@ -130,15 +130,19 @@
   .lg-cut::before { border-top: 2px solid #111; }
   .lg-mtn::before { border-top: 2px dashed var(--mtn); }
   .lg-val::before { border-top: 2px dashed var(--val); }
+  .lg-lcut::before { border-top: 2px solid #FF0000; }   /* レーザー CUT=赤 */
+  .lg-score::before { border-top: 2px solid #0000FF; }  /* レーザー SCORE=青 */
+  .lg-eng::before { border-top: 2px solid #00A000; }    /* ENGRAVE=緑 */
 
   /* レスポンシブ: 狭い画面は縦積み */
   @media (max-width: 1080px) {
     body { height: auto; overflow: auto; }
     .app { flex-direction: column; }
     .sidebar { width: 100%; }
-    .previews { flex-direction: column; }
-    .panel.p3d { height: 360px; }
-    .panel.p2d { height: 80vh; }
+    .previews { flex-direction: column; min-height: 0; }
+    /* 縦積みでは flex:1 が高さ0に潰れるため固定高にする */
+    .panel.p3d { flex: 0 0 360px; height: 360px; min-height: 360px; }
+    .panel.p2d { flex: 0 0 auto; height: 80vh; }
   }
 
   /* 印刷: 展開図だけを実寸で */
@@ -181,23 +185,26 @@
 
     <div class="card">
       <h2><span class="n">2</span>展開設定</h2>
-      <label>平面マージ許容角度（度）</label>
+      <label for="mergeAngle">平面マージ許容角度（度）</label>
       <input type="number" id="mergeAngle" value="0.1" step="0.1" min="0">
       <div class="hint">この角度以下の折れを「同一平面」とみなして面を統合します。</div>
 
       <fieldset>
         <legend>のりしろ</legend>
-        <div class="row"><input type="checkbox" id="useTabs" checked><label>のりしろを付ける</label></div>
-        <label>のりしろ高さ (mm)</label>
+        <div class="row"><input type="checkbox" id="useTabs" checked><label for="useTabs">のりしろを付ける</label></div>
+        <label for="tabHeight">のりしろ高さ (mm)</label>
         <input type="number" id="tabHeight" value="5" step="0.5" min="1">
+        <label for="clearance">クリアランス (mm) — 加工余裕(kerf)</label>
+        <input type="number" id="clearance" value="0.3" step="0.1" min="0">
+        <div class="hint">切断時の焼け幅ぶん、のりしろを控えて余裕を作ります。</div>
       </fieldset>
 
       <fieldset>
         <legend>実寸出力</legend>
-        <label>目標の最大寸法 (mm) ／ 0で原寸</label>
+        <label for="targetHeight">目標の最大寸法 (mm) ／ 0で原寸</label>
         <input type="number" id="targetHeight" value="0" step="1" min="0">
         <div class="hint">例: 150 で最大辺が150mmになるよう全体をスケール。</div>
-        <div class="row" style="margin-top:7px"><input type="checkbox" id="autofit"><label>印刷範囲に自動フィット（縮小・実寸でなくなる）</label></div>
+        <div class="row" style="margin-top:7px"><input type="checkbox" id="autofit"><label for="autofit">印刷範囲に自動フィット（縮小・実寸でなくなる）</label></div>
       </fieldset>
 
       <div class="btnrow"><button id="unfoldBtn" class="block">展開する</button></div>
@@ -209,13 +216,13 @@
         <legend>出力モード</legend>
         <div class="row"><input type="radio" name="mode" value="paper" checked id="modePaper"><label for="modePaper">ペーパークラフト（山谷線・のりしろ・番号）</label></div>
         <div class="row" style="margin-top:5px"><input type="radio" name="mode" value="laser" id="modeLaser"><label for="modeLaser">レーザー加工（CUT/SCOREをレイヤー分離）</label></div>
-        <div class="row" style="margin-top:7px"><input type="checkbox" id="engrave"><label>番号を刻印レイヤーに出す（レーザー時）</label></div>
+        <div class="row" style="margin-top:7px"><input type="checkbox" id="engrave"><label for="engrave">番号を刻印レイヤーに出す（レーザー時）</label></div>
       </fieldset>
       <div class="hint">レーザー: 切断線=赤(CUT)／折り筋=青(SCORE)で色・レイヤー分離。SVG（Inkscapeレイヤー付き）とDXF（レイヤーCUT/SCORE・mm・Y上向き）を出力できます。</div>
 
       <fieldset>
         <legend>折り線（レーザー / DXF）</legend>
-        <label>スタイル</label>
+        <label for="foldStyle">スタイル</label>
         <select id="foldStyle">
           <option value="solid">実線</option>
           <option value="dashed">破線（実線分に分割）</option>
@@ -232,6 +239,7 @@
 
       <fieldset>
         <legend>用紙サイズ</legend>
+        <label for="paper" class="hint" style="margin:0 0 4px">出力する用紙</label>
         <select id="paper">
           <option value="a4">A4（210 × 297 mm）</option>
           <option value="a3">A3（297 × 420 mm）</option>
@@ -253,8 +261,8 @@
     </div>
 
     <div class="card">
-      <h2>ログ / 警告</h2>
-      <div id="status"></div>
+      <h2 id="logHeading">ログ / 警告</h2>
+      <div id="status" role="log" aria-live="polite" aria-labelledby="logHeading"></div>
     </div>
   </aside>
 
@@ -262,8 +270,8 @@
   <div class="previews">
     <section class="panel p3d">
       <div class="phead"><h2>3Dプレビュー</h2><span class="meta">ドラッグで回転 / ホイールでズーム</span></div>
-      <div class="canvaswrap"><canvas id="view3d"></canvas></div>
-      <div class="foot">
+      <div class="canvaswrap"><canvas id="view3d" role="img" aria-label="読み込んだ3Dモデルのプレビュー。ドラッグで回転、ホイールで拡大縮小。緑=切り線、赤=山折り、青=谷折り。"></canvas></div>
+      <div class="foot" id="foot3d">
         <span class="swatch"><i style="background:#22aa44"></i>切り線</span>
         <span class="swatch"><i style="background:#d23b3b"></i>山折り</span>
         <span class="swatch"><i style="background:#3667c9"></i>谷折り</span>
@@ -273,7 +281,7 @@
     <section class="panel p2d">
       <div class="phead">
         <h2>展開図プレビュー</h2>
-        <span class="meta legend2d">
+        <span class="meta legend2d" id="legend2d" aria-label="展開図の凡例">
           <span class="lg-cut">切り</span>
           <span class="lg-mtn">山</span>
           <span class="lg-val">谷</span>
