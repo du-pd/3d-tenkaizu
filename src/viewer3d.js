@@ -10,10 +10,32 @@ export class Viewer3D {
     this.ctx = canvas.getContext('2d');
     this.rotX = -0.5;
     this.rotY = 0.6;
-    this.dist = 3.2;
+    this.camZ = 3.2;   // 透視の奥行き（フォアショートニング量）
+    this.zoom = 0.52;  // 画面充填率（min(w,h)に対する倍率）。ホイールで変える
     this.mesh = null;
     this.edgeColors = null; // Map edgeKey -> '#hex'
+    this.dpr = 1;
     this._bind();
+    // 表示サイズに描画バッファを合わせる（横圧縮を防ぐ）
+    this._resize();
+    if (typeof ResizeObserver !== 'undefined') {
+      this._ro = new ResizeObserver(() => this._resize());
+      this._ro.observe(canvas);
+    }
+    if (typeof window !== 'undefined') window.addEventListener('resize', () => this._resize());
+  }
+
+  // canvas の描画バッファを実表示サイズ×DPRに合わせる。
+  // これをしないと固定解像度がCSSで引き伸ばされ、アスペクト比が崩れる。
+  _resize() {
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const w = this.canvas.clientWidth || this.canvas.width;
+    const h = this.canvas.clientHeight || this.canvas.height;
+    if (w === 0 || h === 0) return;
+    this.dpr = dpr;
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
+    this.draw();
   }
 
   setMesh(mesh) {
@@ -48,8 +70,8 @@ export class Viewer3D {
     this.canvas.addEventListener('pointerup', () => { dragging = false; });
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.dist *= e.deltaY > 0 ? 1.1 : 0.9;
-      this.dist = Math.max(1.4, Math.min(12, this.dist));
+      this.zoom *= e.deltaY > 0 ? 0.9 : 1.1;
+      this.zoom = Math.max(0.12, Math.min(3, this.zoom));
       this.draw();
     }, { passive: false });
   }
@@ -68,9 +90,10 @@ export class Viewer3D {
     let y1 = y * cx - z1 * sx;
     let z2 = y * sx + z1 * cx;
     // 透視投影
+    // ズーム（画面充填率）と透視の奥行きを分離する。
     const w = this.canvas.width, h = this.canvas.height;
-    const f = (Math.min(w, h) * 0.45) / (this.dist);
-    const persp = this.dist / (this.dist - z2);
+    const f = Math.min(w, h) * this.zoom;
+    const persp = this.camZ / (this.camZ - z2);
     return [w / 2 + x1 * f * persp, h / 2 - y1 * f * persp, z2];
   }
 
@@ -107,8 +130,9 @@ export class Viewer3D {
       ctx.closePath();
       ctx.fillStyle = `rgb(${col},${col+15},${col+30})`;
       ctx.fill();
-      // 辺
-      ctx.lineWidth = 1;
+      // 辺（DPRに合わせて太さを調整）
+      ctx.lineWidth = Math.max(1, this.dpr);
+      ctx.lineJoin = 'round';
       f.verts.forEach((vi, k) => {
         const vj = f.verts[(k + 1) % f.verts.length];
         const key = vi < vj ? vi + '_' + vj : vj + '_' + vi;

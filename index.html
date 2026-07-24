@@ -9,56 +9,139 @@
 
 <style>
   :root {
-    --bg: #f2f4f7; --panel: #fff; --ink: #23272e; --sub: #667; --line: #dde1e6;
-    --accent: #2b6cb0; --warnbg: #fff6e0; --warn: #a06000; --errbg: #ffe6e6; --err: #b00;
-    --okbg: #e8f7ec; --ok: #1a7a3a;
+    --bg: #eef1f5; --panel: #ffffff; --panel2: #f7f9fc;
+    --ink: #1f2430; --sub: #5a6472; --faint: #8a93a2; --line: #dde2ea;
+    --accent: #2f6db5; --accent-ink: #1f4e82;
+    --warnbg: #fff7e6; --warn: #8a5a00; --warnline: #efcf8a;
+    --errbg: #fdeaea; --err: #b02323;
+    --okbg: #e9f6ee; --ok: #1a7a3a;
+    --cut: #d23b3b; --mtn: #d23b3b; --val: #3667c9;
+    --shadow: 0 1px 3px rgba(24,35,54,.08), 0 4px 16px rgba(24,35,54,.06);
+    --radius: 10px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
-    background: var(--bg); color: var(--ink); }
-  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 18px; }
-  header h1 { font-size: 17px; margin: 0; }
-  header p { margin: 3px 0 0; font-size: 12px; color: var(--sub); }
-  .scalewarn { background: var(--warnbg); color: var(--warn); border: 1px solid #e8c37a;
-    padding: 8px 12px; font-size: 12.5px; margin: 8px 18px; border-radius: 6px; font-weight: 600; }
-  .layout { display: grid; grid-template-columns: 320px 1fr 1fr; gap: 12px; padding: 12px 18px 40px; }
-  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
-  .card h2 { font-size: 13px; margin: 0 0 10px; color: var(--sub); text-transform: uppercase; letter-spacing: .04em; }
-  label { display: block; font-size: 12.5px; margin: 8px 0 3px; color: var(--sub); }
-  input[type=number], input[type=file] { width: 100%; padding: 5px 7px; border: 1px solid var(--line);
-    border-radius: 5px; font-size: 13px; background: #fff; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- ヘッダ / 警告バナー ---- */
+  header {
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 10px 20px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .01em; display: flex; align-items: center; gap: 7px; }
+  header h1 .mark { font-size: 17px; }
+  header p { margin: 0; font-size: 11.5px; color: var(--sub); flex: 1; min-width: 240px; }
+  .scalewarn {
+    background: var(--warnbg); color: var(--warn); border-bottom: 1px solid var(--warnline);
+    padding: 7px 20px; font-size: 12px;
+  }
+  .scalewarn strong { font-weight: 700; }
+
+  /* ---- メイン3分割: サイドバー + 3D + 展開図 ---- */
+  .app { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 12px; }
+  .sidebar {
+    width: 328px; flex: none; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+    padding-right: 4px;
+  }
+  .previews { flex: 1; min-width: 0; display: flex; gap: 12px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  }
+  .panel.p3d { flex: 1; }
+  .panel.p2d { flex: 1.05; }
+  .panel > .phead {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel2);
+  }
+  .phead h2 { font-size: 12px; margin: 0; color: var(--sub); text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+  .phead .meta { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+  /* ---- サイドバーのカード ---- */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 13px 14px; }
+  .card h2 { font-size: 11px; margin: 0 0 10px; color: var(--accent-ink); letter-spacing: .06em;
+    text-transform: uppercase; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+  .card h2 .n { display: inline-flex; width: 17px; height: 17px; border-radius: 50%; background: var(--accent);
+    color: #fff; align-items: center; justify-content: center; font-size: 10px; }
+
+  label { display: block; font-size: 12px; margin: 9px 0 4px; color: var(--sub); font-weight: 600; }
+  input[type=number], input[type=file] { width: 100%; padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: 7px; font-size: 13px; background: #fff; color: var(--ink); }
+  input[type=number]:focus, input[type=file]:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+  input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 15px; height: 15px; }
   .row { display: flex; gap: 8px; align-items: center; }
-  .row label { margin: 0; }
-  button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 12px;
-    font-size: 13px; cursor: pointer; font-weight: 600; }
-  button.ghost { background: #eef1f5; color: var(--ink); border: 1px solid var(--line); }
-  button:hover { filter: brightness(1.05); }
-  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .samples button { background: #eef1f5; color: var(--ink); border: 1px solid var(--line); padding: 5px 9px; font-size: 12px; }
-  canvas#view3d { width: 100%; height: 340px; border: 1px solid var(--line); border-radius: 6px; background: #f7f8fa; touch-action: none; }
-  #status { max-height: 180px; overflow-y: auto; font-size: 12px; margin-top: 8px;
-    border-top: 1px dashed var(--line); padding-top: 8px; }
-  .msg { padding: 3px 6px; border-radius: 4px; margin: 2px 0; }
+  .row label { margin: 0; font-weight: 500; color: var(--ink); }
+
+  button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 9px 14px;
+    font-size: 13px; cursor: pointer; font-weight: 600; transition: filter .12s, transform .04s; }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: translateY(1px); }
+  button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+  button.ghost { background: #eef2f7; color: var(--ink); border: 1px solid var(--line); }
+  button.block { width: 100%; }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .samples { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .samples button { background: #eef2f7; color: var(--ink); border: 1px solid var(--line);
+    padding: 7px 6px; font-size: 12px; font-weight: 600; }
+
+  /* 3Dキャンバスはパネルいっぱいに */
+  .canvaswrap { flex: 1; position: relative; min-height: 0; background:
+    radial-gradient(120% 120% at 50% 0%, #fbfcfe 0%, #eef2f7 100%); }
+  canvas#view3d { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: block; }
+  .p3d .foot { padding: 8px 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--faint);
+    display: flex; gap: 14px; flex-wrap: wrap; background: var(--panel2); }
+  .swatch { display: inline-flex; align-items: center; gap: 5px; }
+  .swatch i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  #status { overflow-y: auto; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; max-height: 220px; }
+  .msg { padding: 4px 8px; border-radius: 6px; }
   .msg.ok { background: var(--okbg); color: var(--ok); }
   .msg.warn { background: var(--warnbg); color: var(--warn); }
   .msg.err { background: var(--errbg); color: var(--err); font-weight: 600; }
-  #preview { overflow: auto; max-height: 78vh; background: #e9edf2; border-radius: 6px; padding: 10px; }
-  #preview .page { background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); margin: 0 auto 16px; }
+  .msg.plain { color: var(--sub); }
+
+  /* 展開図プレビュー */
+  #preview { flex: 1; overflow: auto; background: #e4e9f0; padding: 14px; }
+  #preview .page { background: #fff; box-shadow: 0 2px 10px rgba(24,35,54,.18); margin: 0 auto 16px; max-width: 100%; }
   #preview .page svg { display: block; width: 100%; height: auto; }
-  #preview .pagelabel { font-size: 11px; color: var(--sub); margin: 4px 0; text-align: center; }
-  fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0 0; padding: 8px 10px; }
-  legend { font-size: 12px; color: var(--sub); padding: 0 4px; }
-  .hint { font-size: 11px; color: var(--sub); margin-top: 4px; line-height: 1.5; }
-  .legend2d { font-size: 11px; color: var(--sub); display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
-  .legend2d span::before { content: ''; display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 4px; }
-  .lg-cut::before { border-top: 2px solid #000; }
-  .lg-mtn::before { border-top: 2px dashed #d33; }
-  .lg-val::before { border-top: 2px dashed #36c; }
+  #preview .pagelabel { font-size: 11px; color: var(--sub); margin: 2px 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+  #preview .empty { color: var(--faint); text-align: center; padding: 40px 12px; font-size: 12px; }
+
+  fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; padding: 9px 11px 11px; }
+  legend { font-size: 11px; color: var(--sub); padding: 0 5px; font-weight: 700; letter-spacing: .03em; }
+  .hint { font-size: 11px; color: var(--faint); margin-top: 5px; line-height: 1.55; }
+
+  .legend2d { font-size: 11px; color: var(--sub); display: flex; gap: 16px; flex-wrap: wrap; }
+  .legend2d span { display: inline-flex; align-items: center; }
+  .legend2d span::before { content: ''; display: inline-block; width: 20px; height: 0; vertical-align: middle; margin-right: 5px; }
+  .lg-cut::before { border-top: 2px solid #111; }
+  .lg-mtn::before { border-top: 2px dashed var(--mtn); }
+  .lg-val::before { border-top: 2px dashed var(--val); }
+
+  /* レスポンシブ: 狭い画面は縦積み */
+  @media (max-width: 1080px) {
+    body { height: auto; overflow: auto; }
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; }
+    .previews { flex-direction: column; }
+    .panel.p3d { height: 360px; }
+    .panel.p2d { height: 80vh; }
+  }
+
+  /* 印刷: 展開図だけを実寸で */
   @media print {
-    header, .card, .scalewarn, #status { display: none !important; }
-    .layout { display: block; padding: 0; }
-    #preview { max-height: none; background: #fff; padding: 0; overflow: visible; }
+    body { height: auto; overflow: visible; display: block; }
+    header, .scalewarn, .sidebar, .panel.p3d, .phead { display: none !important; }
+    .app { display: block; padding: 0; }
+    .previews { display: block; }
+    .panel.p2d { border: 0; box-shadow: none; border-radius: 0; }
+    #preview { overflow: visible; background: #fff; padding: 0; }
     #preview .pagelabel { display: none; }
     #preview .page { box-shadow: none; margin: 0; page-break-after: always; }
     @page { size: A4; margin: 0; }
@@ -67,93 +150,99 @@
 </head>
 <body>
 <header>
-  <h1>3D展開図メーカー</h1>
-  <p>STL / OBJ を読み込んで、ペーパークラフト展開図（SVG）とレーザー加工用ベクター（SVG / DXF）を出力します。データはブラウザ内で処理され、サーバーには送信されません。</p>
+  <h1><span class="mark">📐</span>3D展開図メーカー</h1>
+  <p>STL / OBJ を読み込んで、ペーパークラフト展開図（SVG）とレーザー加工用ベクター（SVG / DXF）を出力します。処理はブラウザ内で完結し、データはサーバーに送信されません。</p>
 </header>
 
 <div class="scalewarn">
-  ⚠ 印刷時の注意: プリンタ設定の「用紙に合わせる / ページに合わせて拡大縮小」を必ず<strong>オフ（実寸・100%）</strong>にしてください。オンだと寸法がすべて狂います。SVGはmm単位で出力されています。
+  ⚠ 印刷時は、プリンタ設定の「用紙に合わせる／ページに合わせて拡大縮小」を必ず<strong>オフ（実寸・100%）</strong>にしてください。オンだと寸法がすべて狂います。SVGは<strong>mm単位</strong>で出力されています。
 </div>
 
-<div class="layout">
-  <!-- 左: 操作パネル -->
-  <div class="card">
-    <h2>1. モデル読込</h2>
-    <label>STL / OBJ ファイル</label>
-    <input type="file" id="file" accept=".stl,.obj">
-    <div class="hint">サンプル形状（授業デモ・検証用）:</div>
-    <div class="samples btnrow">
-      <button data-sample="cube">立方体</button>
-      <button data-sample="tetra">正四面体</button>
-      <button data-sample="octa">正八面体</button>
-      <button data-sample="dodeca">正十二面体</button>
-    </div>
-
-    <canvas id="view3d" width="600" height="340"></canvas>
-    <div class="hint">ドラッグで回転 / ホイールでズーム。緑=切り線、赤=山折り、青=谷折り。</div>
-
-    <h2 style="margin-top:14px">2. 展開設定</h2>
-    <label>平面マージ許容角度（度）</label>
-    <input type="number" id="mergeAngle" value="0.1" step="0.1" min="0">
-    <div class="hint">この角度以下の折れを「同一平面」とみなして面を統合します。</div>
-
-    <fieldset>
-      <legend>のりしろ</legend>
-      <div class="row"><input type="checkbox" id="useTabs" checked><label>のりしろを付ける</label></div>
-      <label>のりしろ高さ (mm)</label>
-      <input type="number" id="tabHeight" value="5" step="0.5" min="1">
-    </fieldset>
-
-    <fieldset>
-      <legend>実寸出力（v0.3）</legend>
-      <label>目標の最大寸法 (mm) ／ 0で原寸</label>
-      <input type="number" id="targetHeight" value="0" step="1" min="0">
-      <div class="hint">例: 150 と入れると最大辺が150mmになるよう全体をスケールします。</div>
-      <div class="row" style="margin-top:6px"><input type="checkbox" id="autofit"><label>A4に自動フィット（縮小・実寸でなくなる）</label></div>
-    </fieldset>
-
-    <div class="btnrow">
-      <button id="unfoldBtn">展開する</button>
-    </div>
-
-    <h2 style="margin-top:14px">ログ / 警告</h2>
-    <div id="status"></div>
-  </div>
-
-  <!-- 中: 出力設定 + 3D -->
-  <div class="card">
-    <h2>3. 出力形式</h2>
-    <fieldset>
-      <legend>出力モード</legend>
-      <div class="row"><input type="radio" name="mode" value="paper" checked><label>ペーパークラフト（山谷線・のりしろ・番号）</label></div>
-      <div class="row"><input type="radio" name="mode" value="laser"><label>レーザー加工（CUT/SCOREをレイヤー分離）</label></div>
-      <div class="row" style="margin-top:6px"><input type="checkbox" id="engrave"><label>番号を刻印レイヤーに出す（レーザー時）</label></div>
-    </fieldset>
-    <div class="hint">
-      レーザー出力: 切断線=赤(CUT)、折り筋=青(SCORE)で色・レイヤー分けします。SVG（Inkscapeレイヤー付き）と DXF（レイヤー CUT/SCORE、mm、Y上向き）を選べます。
-    </div>
-
-    <div class="btnrow">
-      <button id="dlSvg">SVGダウンロード</button>
-      <button id="dlDxf" class="ghost">DXFダウンロード</button>
-      <button id="printBtn" class="ghost">印刷</button>
-    </div>
-
-    <fieldset style="margin-top:14px">
-      <legend>凡例</legend>
-      <div class="legend2d">
-        <span class="lg-cut">切り線</span>
-        <span class="lg-mtn">山折り</span>
-        <span class="lg-val">谷折り</span>
+<div class="app">
+  <!-- 左: 操作サイドバー -->
+  <aside class="sidebar">
+    <div class="card">
+      <h2><span class="n">1</span>モデル読込</h2>
+      <label>STL / OBJ ファイル</label>
+      <input type="file" id="file" accept=".stl,.obj">
+      <div class="hint">サンプル形状（授業デモ・検証用）:</div>
+      <div class="samples">
+        <button data-sample="cube">立方体</button>
+        <button data-sample="tetra">正四面体</button>
+        <button data-sample="octa">正八面体</button>
+        <button data-sample="dodeca">正十二面体</button>
       </div>
-      <div class="hint">緑の数字=貼り合わせる辺の対応番号。P1,P2…=パーツ番号。</div>
-    </fieldset>
-  </div>
+    </div>
 
-  <!-- 右: 展開図プレビュー -->
-  <div class="card">
-    <h2>4. 展開図プレビュー</h2>
-    <div id="preview"></div>
+    <div class="card">
+      <h2><span class="n">2</span>展開設定</h2>
+      <label>平面マージ許容角度（度）</label>
+      <input type="number" id="mergeAngle" value="0.1" step="0.1" min="0">
+      <div class="hint">この角度以下の折れを「同一平面」とみなして面を統合します。</div>
+
+      <fieldset>
+        <legend>のりしろ</legend>
+        <div class="row"><input type="checkbox" id="useTabs" checked><label>のりしろを付ける</label></div>
+        <label>のりしろ高さ (mm)</label>
+        <input type="number" id="tabHeight" value="5" step="0.5" min="1">
+      </fieldset>
+
+      <fieldset>
+        <legend>実寸出力</legend>
+        <label>目標の最大寸法 (mm) ／ 0で原寸</label>
+        <input type="number" id="targetHeight" value="0" step="1" min="0">
+        <div class="hint">例: 150 で最大辺が150mmになるよう全体をスケール。</div>
+        <div class="row" style="margin-top:7px"><input type="checkbox" id="autofit"><label>A4に自動フィット（縮小・実寸でなくなる）</label></div>
+      </fieldset>
+
+      <div class="btnrow"><button id="unfoldBtn" class="block">展開する</button></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="n">3</span>出力形式</h2>
+      <fieldset>
+        <legend>出力モード</legend>
+        <div class="row"><input type="radio" name="mode" value="paper" checked id="modePaper"><label for="modePaper">ペーパークラフト（山谷線・のりしろ・番号）</label></div>
+        <div class="row" style="margin-top:5px"><input type="radio" name="mode" value="laser" id="modeLaser"><label for="modeLaser">レーザー加工（CUT/SCOREをレイヤー分離）</label></div>
+        <div class="row" style="margin-top:7px"><input type="checkbox" id="engrave"><label>番号を刻印レイヤーに出す（レーザー時）</label></div>
+      </fieldset>
+      <div class="hint">レーザー: 切断線=赤(CUT)／折り筋=青(SCORE)で色・レイヤー分離。SVG（Inkscapeレイヤー付き）とDXF（レイヤーCUT/SCORE・mm・Y上向き）を出力できます。</div>
+      <div class="btnrow">
+        <button id="dlSvg">SVGダウンロード</button>
+        <button id="dlDxf" class="ghost">DXFダウンロード</button>
+        <button id="printBtn" class="ghost">印刷</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>ログ / 警告</h2>
+      <div id="status"></div>
+    </div>
+  </aside>
+
+  <!-- 右: プレビュー2枚 -->
+  <div class="previews">
+    <section class="panel p3d">
+      <div class="phead"><h2>3Dプレビュー</h2><span class="meta">ドラッグで回転 / ホイールでズーム</span></div>
+      <div class="canvaswrap"><canvas id="view3d"></canvas></div>
+      <div class="foot">
+        <span class="swatch"><i style="background:#22aa44"></i>切り線</span>
+        <span class="swatch"><i style="background:#d23b3b"></i>山折り</span>
+        <span class="swatch"><i style="background:#3667c9"></i>谷折り</span>
+      </div>
+    </section>
+
+    <section class="panel p2d">
+      <div class="phead">
+        <h2>展開図プレビュー</h2>
+        <span class="meta legend2d">
+          <span class="lg-cut">切り</span>
+          <span class="lg-mtn">山</span>
+          <span class="lg-val">谷</span>
+        </span>
+      </div>
+      <div id="preview"><div class="empty">モデルを読み込むと展開図が表示されます</div></div>
+    </section>
   </div>
 </div>
 
