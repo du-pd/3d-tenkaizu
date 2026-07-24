@@ -29,6 +29,18 @@ function log(msg, cls = '') {
 }
 function clearLog() { $('status').innerHTML = ''; }
 
+function paperSize() {
+  const p = $('paper').value;
+  if (p === 'a3') return { pageW: 297, pageH: 420 };
+  if (p === 'custom') {
+    return {
+      pageW: Math.max(10, parseFloat($('pageW').value) || 300),
+      pageH: Math.max(10, parseFloat($('pageH').value) || 600),
+    };
+  }
+  return { pageW: 210, pageH: 297 }; // A4
+}
+
 function modelExtent(mesh) {
   let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const v of mesh.vertices) for (let k = 0; k < 3; k++) {
@@ -91,19 +103,22 @@ function unfoldNow() {
     scale = targetH / modelH;
   }
 
+  const page = paperSize();
   const baseOpts = {
     tabs: $('useTabs').checked,
     tabHeight: parseFloat($('tabHeight').value) || 5,
     engrave: $('engrave').checked,
+    pageW: page.pageW,
+    pageH: page.pageH,
   };
 
-  // A4自動フィット: 最大パーツがA4内に収まるよう縮小（実寸ではなくなる旨は警告）
+  // 用紙自動フィット: 最大パーツが用紙内に収まるよう縮小（実寸ではなくなる旨は警告）
   let autofit = false;
   if ($('autofit').checked) {
     const probe = buildLayout(merged, unfold, { ...baseOpts, scale });
     let maxW = 0, maxH = 0;
     for (const pd of probe.parts) { maxW = Math.max(maxW, pd.bbox.w); maxH = Math.max(maxH, pd.bbox.h); }
-    const usableW = 210 - 20, usableH = 297 - 20;
+    const usableW = page.pageW - 20, usableH = page.pageH - 20;
     const fit = Math.min(usableW / maxW, usableH / maxH);
     if (fit < 1) { scale *= fit * 0.98; autofit = true; }
   }
@@ -115,11 +130,11 @@ function unfoldNow() {
   log(`展開完了: パーツ ${unfold.parts.length} 個 / 折り線 ${unfold.foldEdges.length} / 切り線 ${unfold.cutEdges.length}`, 'ok');
   if (unfold.parts.length > 1)
     log(`重なり回避のため ${unfold.parts.length} パーツに分割しました（辺番号で貼り合わせ）`, 'warn');
-  log(`ページ数: ${layout.pages.length}（A4）${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
+  log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
   if (autofit)
-    log('A4自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
+    log('用紙に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
   else if (layout.overflow)
-    log('警告: A4に収まらないパーツがあります。「A4に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
+    log('警告: 用紙に収まらないパーツがあります。「用紙に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
 
   // 3Dビューの辺色分け（折り=緑, 切り=赤）
   const ec = new Map();
@@ -221,8 +236,14 @@ $('dlDxf').addEventListener('click', downloadDXF);
 $('printBtn').addEventListener('click', () => window.print());
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', renderPreview));
-['mergeAngle', 'tabHeight', 'targetHeight', 'useTabs', 'engrave', 'autofit'].forEach((id) =>
+['mergeAngle', 'tabHeight', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
   $(id).addEventListener('change', () => { if (state.triMesh) unfoldNow(); }));
+
+// 用紙サイズ切替: カスタム時のみW×H入力を表示
+$('paper').addEventListener('change', () => {
+  $('customSize').hidden = $('paper').value !== 'custom';
+  if (state.triMesh) unfoldNow();
+});
 
 // 初期表示: 立方体
 loadTriangleSoup(cube(40), 'cube');

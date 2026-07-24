@@ -32,7 +32,7 @@ const status = await page.$eval('#status', (el) => el.innerText);
 console.log('--- 初期ステータス(cube) ---\n' + status);
 
 // 各サンプルで展開してエラーが出ないか
-for (const s of ['tetra', 'octa', 'dodeca', 'cube']) {
+for (const s of ['dodeca', 'cube']) {
   await page.click(`[data-sample="${s}"]`);
   await page.waitForTimeout(300);
   const st = await page.$eval('#status', (el) => el.innerText);
@@ -64,11 +64,23 @@ await page.fill('#targetHeight', '300');
 await page.dispatchEvent('#targetHeight', 'change');
 await page.waitForTimeout(300);
 const st3 = await page.$eval('#status', (el) => el.innerText);
-console.log('overflow warned:', /A4に収まらない/.test(st3));
+console.log('overflow warned:', /用紙に収まらない/.test(st3));
 await page.click('#autofit');
 await page.waitForTimeout(300);
 const st4 = await page.$eval('#status', (el) => el.innerText);
 console.log('autofit applied:', /自動フィット/.test(st4));
+
+// 用紙サイズ: A4 / A3 / カスタム で SVG viewBox が変わるか
+await page.click('[data-sample="cube"]');
+const vb = () => page.$eval('#preview .page svg', (el) => el.getAttribute('viewBox'));
+await page.selectOption('#paper', 'a3'); await page.waitForTimeout(200);
+console.log('A3 viewBox:', await vb(), '=>', (await vb()) === '0 0 297 420' ? 'ok' : 'FAIL');
+await page.selectOption('#paper', 'custom'); await page.waitForTimeout(200);
+const custVisible = await page.$eval('#customSize', (el) => getComputedStyle(el).display !== 'none');
+console.log('custom fields visible:', custVisible, '/ default viewBox:', await vb());
+await page.selectOption('#paper', 'a4'); await page.waitForTimeout(200);
+const custHidden = await page.$eval('#customSize', (el) => getComputedStyle(el).display === 'none');
+console.log('custom fields hidden on A4:', custHidden);
 
 await page.screenshot({ path: 'scratch/ui.png', fullPage: false });
 

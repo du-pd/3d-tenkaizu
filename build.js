@@ -19,7 +19,10 @@ const body = html
   .match(/<body>([\s\S]*?)<\/body>/)[1]
   .replace(/<script[^>]*><\/script>/, '');
 
-const out = `<!DOCTYPE html>
+fs.mkdirSync('dist', { recursive: true });
+
+// (1) standalone: 完全なHTML文書。GitHub Pages / オフライン配布用。
+const standalone = `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
@@ -34,7 +37,17 @@ ${bundle}
 </script>
 </body>
 </html>`;
+fs.writeFileSync('dist/standalone.html', standalone);
+console.log('built dist/standalone.html', standalone.length, 'bytes');
 
-fs.mkdirSync('dist', { recursive: true });
-fs.writeFileSync('dist/standalone.html', out);
-console.log('built dist/standalone.html', out.length, 'bytes');
+// (2) artifact: ラッパー無し（DOCTYPE/html/head/body を付けない）。
+// Claude Artifact はこれ自体を head/body で包むため、二重の <html>/<body> を
+// 避けないと height:100vh などが効かずレイアウトが崩れる。
+const artifact = `<title>${title}</title>
+${style}
+${body}
+<script>
+${bundle}
+</script>`;
+fs.writeFileSync('dist/artifact.html', artifact);
+console.log('built dist/artifact.html', artifact.length, 'bytes');

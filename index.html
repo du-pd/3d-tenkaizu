@@ -20,6 +20,7 @@
     --radius: 10px;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; } /* .row{display:flex} が hidden を上書きしないように */
   html, body { height: 100%; }
   body {
     margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden;
@@ -48,7 +49,7 @@
     width: 328px; flex: none; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
     padding-right: 4px;
   }
-  .previews { flex: 1; min-width: 0; display: flex; gap: 12px; }
+  .previews { flex: 1; min-width: 0; display: flex; gap: 12px; min-height: 560px; }
   .panel {
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
     box-shadow: var(--shadow); display: flex; flex-direction: column; min-width: 0; overflow: hidden;
@@ -75,6 +76,12 @@
     border-radius: 7px; font-size: 13px; background: #fff; color: var(--ink); }
   input[type=number]:focus, input[type=file]:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
   input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 15px; height: 15px; }
+  select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px;
+    font-size: 13px; background: #fff; color: var(--ink); }
+  select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .customsize { margin-top: 7px; }
+  .customsize input { flex: 1; min-width: 0; }
+  .customsize .mul { color: var(--sub); font-size: 12px; }
   .row { display: flex; gap: 8px; align-items: center; }
   .row label { margin: 0; font-weight: 500; color: var(--ink); }
 
@@ -168,8 +175,6 @@
       <div class="hint">サンプル形状（授業デモ・検証用）:</div>
       <div class="samples">
         <button data-sample="cube">立方体</button>
-        <button data-sample="tetra">正四面体</button>
-        <button data-sample="octa">正八面体</button>
         <button data-sample="dodeca">正十二面体</button>
       </div>
     </div>
@@ -207,6 +212,22 @@
         <div class="row" style="margin-top:7px"><input type="checkbox" id="engrave"><label>番号を刻印レイヤーに出す（レーザー時）</label></div>
       </fieldset>
       <div class="hint">レーザー: 切断線=赤(CUT)／折り筋=青(SCORE)で色・レイヤー分離。SVG（Inkscapeレイヤー付き）とDXF（レイヤーCUT/SCORE・mm・Y上向き）を出力できます。</div>
+
+      <fieldset>
+        <legend>用紙サイズ</legend>
+        <select id="paper">
+          <option value="a4">A4（210 × 297 mm）</option>
+          <option value="a3">A3（297 × 420 mm）</option>
+          <option value="custom">カスタム</option>
+        </select>
+        <div class="row customsize" id="customSize" hidden>
+          <input type="number" id="pageW" value="300" min="10" step="1" aria-label="幅mm">
+          <span class="mul">×</span>
+          <input type="number" id="pageH" value="600" min="10" step="1" aria-label="高さmm">
+          <span class="mul">mm</span>
+        </div>
+      </fieldset>
+
       <div class="btnrow">
         <button id="dlSvg">SVGダウンロード</button>
         <button id="dlDxf" class="ghost">DXFダウンロード</button>
