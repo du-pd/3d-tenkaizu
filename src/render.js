@@ -33,9 +33,12 @@ export function toPaperSVG(layout, opts = {}) {
 function renderPartPaper(pd, offset, showNumbers) {
   const g = [];
   const T = (p) => [p[0] + offset[0], p[1] + offset[1]];
-  // のりしろ（細い実線）
+  // のりしろ: 外周3辺=細実線、付け根=折り線(細い破線)
   for (const tab of pd.tabs) {
-    g.push(`<polygon points="${ptsAttr(tab.poly.map(T))}" fill="none" stroke="#888" stroke-width="0.2"/>`);
+    const o = tab.outer.map(T);
+    g.push(`<polyline points="${ptsAttr([o[0], o[1], o[2], o[3]])}" fill="none" stroke="#888" stroke-width="0.2"/>`);
+    const [b0, b1] = [T(tab.base[0]), T(tab.base[1])];
+    g.push(`<line x1="${fmt(b0[0])}" y1="${fmt(b0[1])}" x2="${fmt(b1[0])}" y2="${fmt(b1[1])}" stroke="#aaa" stroke-width="0.2" stroke-dasharray="2,1.5"/>`);
   }
   // 切り線（太めの実線）
   for (const c of pd.cutLines) {
@@ -74,28 +77,31 @@ export function toLaserSVG(layout, opts = {}) {
   const engrave = opts.engrave === true; // 番号を刻印レイヤーに出すか
   const scoreFolds = opts.scoreFolds !== false; // 折り線をスコアとして出すか
   const strokeW = opts.strokeWidth ?? 0.1; // ヘアライン相当
+  const dash = opts.dash; // { dashed, len, gap } 破線設定（未指定=実線）
 
   const svgs = [];
   layout.pages.forEach((page, pi) => {
     const cut = [];
     const score = [];
     const mark = [];
+    // スコア線を出力（破線なら実際の線分に分割）
+    const emitScore = (p, q) => {
+      for (const [a, b] of scoreSegments(p, q, dash)) score.push(lineEl(a, b, scoreColor, strokeW));
+    };
     for (const { pd, offset } of page.parts) {
       const T = (p) => [p[0] + offset[0], p[1] + offset[1]];
-      // 切断: パーツ外形（切り線）＋のりしろ外形
+      // 切断: 切り線 ＋ のりしろ外周3辺（付け根=底辺は切らない）
       for (const tab of pd.tabs) {
-        // のりしろの外側3辺のみ切断（底辺=折り線側は切らない）
-        const poly = tab.poly.map(T);
-        cut.push(polyline([poly[0], poly[1], poly[2], poly[3]], cutColor, strokeW, false));
+        const o = tab.outer.map(T);
+        cut.push(polyline([o[0], o[1], o[2], o[3]], cutColor, strokeW, false));
       }
       for (const c of pd.cutLines) {
         cut.push(lineEl(T(c.p), T(c.q), cutColor, strokeW));
       }
-      // スコア: 折り線（山谷区別なし・低出力想定）
+      // スコア: 折り線 ＋ のりしろ付け根（低出力でスジ入れ）
       if (scoreFolds) {
-        for (const f of pd.foldLines) {
-          score.push(lineEl(T(f.p), T(f.q), scoreColor, strokeW));
-        }
+        for (const f of pd.foldLines) emitScore(T(f.p), T(f.q));
+        for (const tab of pd.tabs) emitScore(T(tab.base[0]), T(tab.base[1]));
       }
       // 刻印: 番号
       if (engrave) {
@@ -126,6 +132,34 @@ function polyline(pts, color, w, closed) {
   return `<${tag} points="${ptsAttr(pts)}" fill="none" stroke="${color}" stroke-width="${w}"/>`;
 }
 
+// 線分 p-q を実際の破線（短い線分の列）に分割する。中央揃え・最低1本。
+// 加工ソフトが stroke-dasharray を実線化してしまう問題を避けるため、
+// SVG/DXF とも「本物の線分」に分割して出力する。
+export function dashSegments(p, q, dashLen, gap) {
+  const dx = q[0] - p[0], dy = q[1] - p[1];
+  const L = Math.hypot(dx, dy);
+  if (L < 1e-9) return [];
+  const ux = dx / L, uy = dy / L;
+  const d = Math.max(0.1, dashLen), g = Math.max(0, gap);
+  if (L <= d) return [[[p[0], p[1]], [q[0], q[1]]]]; // 短辺は1本の破線（全長）
+  const period = d + g;
+  const k = Math.max(1, Math.floor((L + g) / period)); // 破線本数
+  const used = k * d + (k - 1) * g;
+  const start = (L - used) / 2; // パターンを中央揃え
+  const segs = [];
+  for (let i = 0; i < k; i++) {
+    const s = start + i * period, e = s + d;
+    segs.push([[p[0] + ux * s, p[1] + uy * s], [p[0] + ux * e, p[1] + uy * e]]);
+  }
+  return segs;
+}
+
+// スコア線の分割: dash 指定があれば破線分割、なければ実線1本。
+export function scoreSegments(p, q, dash) {
+  if (dash && dash.dashed) return dashSegments(p, q, dash.len ?? 3, dash.gap ?? 2);
+  return [[[p[0], p[1]], [q[0], q[1]]]];
+}
+
 function wrapSVG(w, h, body, meta = {}) {
   const inks = meta.inkscape
     ? ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"'
@@ -145,21 +179,27 @@ ${body}
 export function toDXF(layout, opts = {}) {
   const flipY = (y) => layout.pageH - y; // 各ページ内で反転
 
+  const dash = opts.dash; // { dashed, len, gap }
   // 1) まず全セグメントを集めて図面範囲を求める
   const segs = []; // { p, q, layer }
+  const addScore = (p, q) => {
+    for (const [a, b] of scoreSegments(p, q, dash)) segs.push({ p: a, q: b, layer: 'SCORE' });
+  };
   layout.pages.forEach((page, pi) => {
     const pageOffX = pi * (layout.pageW + 20);
     for (const { pd, offset } of page.parts) {
       const T = (p) => [p[0] + offset[0] + pageOffX, flipY(p[1] + offset[1])];
+      // のりしろ: 外周3辺=CUT、付け根=SCORE
       for (const tab of pd.tabs) {
-        const poly = tab.poly.map(T);
-        segs.push({ p: poly[0], q: poly[1], layer: 'CUT' });
-        segs.push({ p: poly[1], q: poly[2], layer: 'CUT' });
-        segs.push({ p: poly[2], q: poly[3], layer: 'CUT' });
+        const o = tab.outer.map(T);
+        segs.push({ p: o[0], q: o[1], layer: 'CUT' });
+        segs.push({ p: o[1], q: o[2], layer: 'CUT' });
+        segs.push({ p: o[2], q: o[3], layer: 'CUT' });
+        if (opts.scoreFolds !== false) addScore(T(tab.base[0]), T(tab.base[1]));
       }
       for (const c of pd.cutLines) segs.push({ p: T(c.p), q: T(c.q), layer: 'CUT' });
       if (opts.scoreFolds !== false) {
-        for (const f of pd.foldLines) segs.push({ p: T(f.p), q: T(f.q), layer: 'SCORE' });
+        for (const f of pd.foldLines) addScore(T(f.p), T(f.q));
       }
     }
   });
