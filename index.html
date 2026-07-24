@@ -133,6 +133,8 @@
   .lg-lcut::before { border-top: 2px solid #FF0000; }   /* レーザー CUT=赤 */
   .lg-score::before { border-top: 2px solid #0000FF; }  /* レーザー SCORE=青 */
   .lg-eng::before { border-top: 2px solid #00A000; }    /* ENGRAVE=緑 */
+  .lg-lmtn::before { border-top: 2px dotted #0000FF; }  /* レーザー 山=一点鎖線ふう */
+  .lg-lval::before { border-top: 2px dashed #0000FF; }  /* レーザー 谷=破線 */
 
   /* レスポンシブ: 狭い画面は縦積み */
   @media (max-width: 1080px) {
@@ -238,6 +240,7 @@
           <input type="number" id="dashGap" value="2" min="0" step="0.5" aria-label="間隔mm">
           <span class="mul">mm</span>
         </div>
+        <div class="row" id="distinguishRow" hidden style="margin-top:6px"><input type="checkbox" id="distinguishFolds" checked><label for="distinguishFolds">山折り／谷折りをパターンで区別（山=一点鎖線 / 谷=破線）</label></div>
         <div class="hint">破線はレーザー機での実線化を避けるため、実際の短い線分に分割して出力します。</div>
       </fieldset>
 

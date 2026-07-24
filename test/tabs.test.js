@@ -3,7 +3,7 @@ import { weldTriangleSoup } from '../src/parse.js';
 import { buildTriMesh, mergeCoplanar } from '../src/mesh.js';
 import { buildSpanningTree, unfoldMesh } from '../src/unfold.js';
 import { buildLayout, fitTabHeight, makeTabPoly, polyOverlap } from '../src/layout.js';
-import { toLaserSVG, toDXF, dashSegments, scoreSegments } from '../src/render.js';
+import { toLaserSVG, toDXF, dashSegments, scoreSegments, foldSegments, patternSegments } from '../src/render.js';
 import { len2, sub2 } from '../src/vec.js';
 import { cube, octahedron, dodecahedron } from '../src/samples.js';
 
@@ -110,6 +110,37 @@ console.log('== 破線分割 ==');
   const solidDxf = (toDXF(L, { scoreFolds: true }).match(/SCORE/g) || []).length;
   const dashedDxf = (toDXF(L, { scoreFolds: true, dash: { dashed: true, len: 2, gap: 1.5 } }).match(/SCORE/g) || []).length;
   check('DXF: 破線でSCORE要素が増える', dashedDxf > solidDxf, `solid=${solidDxf} dashed=${dashedDxf}`);
+}
+
+// ---- 4. 山折り/谷折りのパターン区別 ----
+console.log('== 山谷パターン区別 ==');
+{
+  const P = [0, 0], Q = [40, 0];
+  // patternSegments: 一点鎖線 [3,2,0.6,2] は周期7.6。40mmに5周期→各2区間=10本
+  const ps = patternSegments(P, Q, [3, 2, 0.6, 2]);
+  check('patternSegments: 一点鎖線が dash+dot に分割', ps.length === 10, `${ps.length}`);
+  check('patternSegments: dot(短線分<1mm)を含む', ps.some((s) => { const L = len2(sub2(s[1], s[0])); return L > 0 && L < 1.0; }));
+
+  const dash = { dashed: true, len: 3, gap: 2, distinguish: true };
+  const val = foldSegments(P, Q, dash, 'valley');
+  const mtn = foldSegments(P, Q, dash, 'mountain');
+  check('区別ON: 谷=破線(全区間 長さ3)', val.every((s) => Math.abs(len2(sub2(s[1], s[0])) - 3) < 1e-6));
+  check('区別ON: 山と谷でパターン(本数)が異なる', mtn.length !== val.length, `mtn=${mtn.length} val=${val.length}`);
+  check('区別ON: 山に一点鎖線のdotが含まれる', mtn.some((s) => { const L = len2(sub2(s[1], s[0])); return L > 0 && L < 1.0; }));
+  check('区別ON: 谷にはdotが無い(全部長さ3)', !val.some((s) => len2(sub2(s[1], s[0])) < 1.0));
+
+  // 区別OFF: 山も谷も同じ破線
+  const dashOff = { dashed: true, len: 3, gap: 2, distinguish: false };
+  check('区別OFF: 山も谷と同じ破線', foldSegments(P, Q, dashOff, 'mountain').length === foldSegments(P, Q, dashOff, 'valley').length);
+  // のりしろ付け根は常に破線（山扱いしない）
+  check('付け根(tab)は破線', foldSegments(P, Q, dash, 'tab').every((s) => Math.abs(len2(sub2(s[1], s[0])) - 3) < 1e-6));
+  // 実線モードは1本
+  check('実線モード: 折り線は1本', foldSegments(P, Q, { dashed: false }, 'mountain').length === 1);
+
+  // レーザーSVG全体: 立方体(全辺 山折り)で区別ONでもエラーなく生成できる
+  const L = layoutOf(cube, { tabHeight: 5 });
+  const svg = toLaserSVG(L, { dash })[0];
+  check('レーザーSVG(区別ON)が生成される', svg.includes('id="score"') && svg.includes('<line'));
 }
 
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
