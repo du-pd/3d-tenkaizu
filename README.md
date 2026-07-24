@@ -42,10 +42,24 @@ npm run serve          # http://localhost:8123/index.html
 
 出力形式:
 
-- **SVG**: Inkscape レイヤー属性つき（`inkscape:label` = CUT / SCORE / ENGRAVE）。
-  多くのレーザー機のカラーマッピング運用にそのまま乗せられます。
+- **SVG**: `id` とストローク色でレイヤー分離（CUT=赤 / SCORE=青 / ENGRAVE=緑）。
+  Inkscape レイヤー属性（`inkscape:label`）も付与。多くのレーザー機のカラー
+  マッピング運用にそのまま乗せられます。
 - **DXF (R12 ASCII)**: レイヤー `CUT` / `SCORE`、単位 mm、Y軸上向き（CAD慣習）。
-  Illustrator を介さずレーザー機の CAM に直接読み込めます。
+  線色は ByLayer ではなく明示指定（CUT=赤1 / SCORE=青5）で、色を解決しない
+  取り込みでも CUT/SCORE を区別できます。
+
+### どの形式を使う？
+
+| 用途 | 推奨形式 | 備考 |
+|------|----------|------|
+| **Illustrator / Inkscape で編集** | **SVG** | Illustrator は SVG をネイティブに開けます（レイヤー・色・実寸そのまま）。DXF取り込みは尺度や色でつまずきやすいので SVG が確実。 |
+| Rhino / CAD | DXF | 実寸 mm でそのまま。 |
+| レーザー機の CAM に直接 (LightBurn 等) | DXF または SVG | 機種のカラーマッピングに合わせて選択。 |
+
+> Illustrator でレーザー用ベクターを扱うなら、まず **SVG** を試してください。DXF が
+> どうしても必要で開けない場合は、症状（何も出ない／尺度が違う／色が付かない 等）に
+> 応じて調整できます。
 
 ## 処理フロー（自前実装）
 
