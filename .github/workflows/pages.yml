@@ -1,0 +1,61 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時デプロイは1本に絞る（進行中のrunはキャンセルしない）
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build single-file site
+        run: |
+          npm run build
+          mkdir -p _site
+          # 自己完結の単一ファイル版をサイトのトップに配置
+          cp dist/standalone.html _site/index.html
+          # マルチファイル版も /app/ で配信（開発用の src/ を含む）
+          mkdir -p _site/app
+          cp index.html _site/app/index.html
+          cp -r src _site/app/src
+          cp -r test _site/app/test
+
+      # enablement:true で Pages を自動有効化（Settings手動操作が不要）
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
