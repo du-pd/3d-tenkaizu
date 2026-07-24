@@ -132,9 +132,9 @@ function unfoldNow() {
     log(`重なり回避のため ${unfold.parts.length} パーツに分割しました（辺番号で貼り合わせ）`, 'warn');
   log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
   if (autofit)
-    log('用紙に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
+    log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
   else if (layout.overflow)
-    log('警告: 用紙に収まらないパーツがあります。「用紙に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
+    log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
 
   // 3Dビューの辺色分け（折り=緑, 切り=赤）
   const ec = new Map();

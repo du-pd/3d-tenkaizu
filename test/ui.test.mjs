@@ -64,7 +64,7 @@ await page.fill('#targetHeight', '300');
 await page.dispatchEvent('#targetHeight', 'change');
 await page.waitForTimeout(300);
 const st3 = await page.$eval('#status', (el) => el.innerText);
-console.log('overflow warned:', /用紙に収まらない/.test(st3));
+console.log('overflow warned:', /印刷範囲に収まらない/.test(st3));
 await page.click('#autofit');
 await page.waitForTimeout(300);
 const st4 = await page.$eval('#status', (el) => el.innerText);
