@@ -101,5 +101,27 @@ const lsvg = toLaserSVG(layout)[0];
 check('レーザーSVG: CUTが赤', lsvg.includes('#FF0000'));
 check('レーザーSVG: SCOREが青', lsvg.includes('#0000FF'));
 
+// --- ページ分割: 複数パーツが1枚に収まらなければ複数ページへ ---
+console.log('== ページ分割 ==');
+{
+  // 6個の離れた立方体 → 6パーツ。小さい用紙で複数ページに分かれる
+  let tris6 = [];
+  for (let i = 0; i < 6; i++) {
+    const o = [(i % 3) * 80, Math.floor(i / 3) * 80, 0];
+    for (const t of cube(30)) tris6.push(t.map((v) => [v[0] + o[0], v[1] + o[1], v[2] + o[2]]));
+  }
+  const w6 = weldTriangleSoup(tris6);
+  const m6 = mergeCoplanar(buildTriMesh(w6.vertices, w6.triangles));
+  const r6 = unfoldMesh(m6, buildSpanningTree(m6));
+  check('6個の離れた立方体 → 6パーツ', r6.parts.length === 6, `${r6.parts.length}`);
+  const L6 = buildLayout(m6, r6, { tabs: true, tabHeight: 4, pageW: 100, pageH: 100 });
+  check('小用紙で複数ページに分割', L6.pages.length > 1, `pages=${L6.pages.length}`);
+  const placed6 = L6.pages.reduce((s, p) => s + p.parts.length, 0);
+  check('全パーツがいずれかのページに配置', placed6 === r6.parts.length, `${placed6}/${r6.parts.length}`);
+  // 大きい用紙なら1ページに収まる
+  const Lbig = buildLayout(m6, r6, { tabs: true, tabHeight: 4, pageW: 420, pageH: 594 });
+  check('大用紙なら1ページ', Lbig.pages.length === 1, `pages=${Lbig.pages.length}`);
+}
+
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
 process.exit(fail ? 1 : 0);

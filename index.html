@@ -145,17 +145,21 @@
     .panel.p2d { flex: 0 0 auto; height: 80vh; }
   }
 
-  /* 印刷: 展開図だけを実寸で */
+  /* 印刷: 展開図だけを実寸で。各ページを別々の用紙に出す。
+     @page の用紙サイズは #pageStyle に JS で注入する（A4/A3/カスタム対応）。*/
   @media print {
-    body { height: auto; overflow: visible; display: block; }
+    body { height: auto; overflow: visible; display: block; margin: 0; }
     header, .scalewarn, .sidebar, .panel.p3d, .phead { display: none !important; }
-    .app { display: block; padding: 0; }
-    .previews { display: block; }
-    .panel.p2d { border: 0; box-shadow: none; border-radius: 0; }
-    #preview { overflow: visible; background: #fff; padding: 0; }
-    #preview .pagelabel { display: none; }
-    #preview .page { box-shadow: none; margin: 0; page-break-after: always; }
-    @page { size: A4; margin: 0; }
+    .app { display: block; padding: 0; gap: 0; }
+    .previews { display: block; min-height: 0; gap: 0; }
+    /* overflow:hidden を必ず解除。残るとページ分割が抑制され1枚に潰れる。 */
+    .panel.p2d { border: 0; box-shadow: none; border-radius: 0; overflow: visible; height: auto; flex: none; display: block; }
+    #preview { overflow: visible; background: #fff; padding: 0; display: block; height: auto; }
+    #preview .pagelabel, #preview .empty { display: none; }
+    #preview .page { box-shadow: none; margin: 0; overflow: visible; break-after: page; page-break-after: always; }
+    #preview .page:last-child { break-after: auto; page-break-after: auto; } /* 末尾の空白ページ防止 */
+    /* 実寸を保つため svg は intrinsic な mm サイズで出す（width:100% を無効化） */
+    #preview .page svg { width: auto !important; height: auto; display: block; }
   }
 </style>
 </head>

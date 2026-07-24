@@ -41,6 +41,14 @@ function paperSize() {
   return { pageW: 210, pageH: 297 }; // A4
 }
 
+// 印刷用紙サイズ(@page)を選択中の用紙に合わせて注入。A4/A3/カスタムに対応。
+function setPageStyle() {
+  const { pageW, pageH } = paperSize();
+  let el = document.getElementById('pageStyle');
+  if (!el) { el = document.createElement('style'); el.id = 'pageStyle'; document.head.appendChild(el); }
+  el.textContent = `@page { size: ${pageW}mm ${pageH}mm; margin: 0; }`;
+}
+
 function modelExtent(mesh) {
   let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const v of mesh.vertices) for (let k = 0; k < 3; k++) {
@@ -134,6 +142,7 @@ function unfoldNow() {
   const layout = buildLayout(merged, unfold, { ...baseOpts, scale });
   state.layout = layout;
   state.scale = scale;
+  setPageStyle(); // 印刷用紙サイズを現在の用紙に合わせる
 
   log(`展開完了: パーツ ${unfold.parts.length} 個 / 折り線 ${unfold.foldEdges.length} / 切り線 ${unfold.cutEdges.length}`, 'ok');
   if (unfold.parts.length > 1)
@@ -269,7 +278,7 @@ document.querySelectorAll('[data-sample]').forEach((btn) => {
 $('unfoldBtn').addEventListener('click', unfoldNow);
 $('dlSvg').addEventListener('click', downloadSVG);
 $('dlDxf').addEventListener('click', downloadDXF);
-$('printBtn').addEventListener('click', () => window.print());
+$('printBtn').addEventListener('click', () => { setPageStyle(); window.print(); });
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', renderPreview));
 ['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
