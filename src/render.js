@@ -265,7 +265,10 @@ function layerDef(push, name, color) {
   push(0, 'LAYER'); push(2, name); push(70, 0); push(62, color); push(6, 'CONTINUOUS');
 }
 function dxfLine(push, p, q, layer) {
-  push(0, 'LINE'); push(8, layer); push(6, 'CONTINUOUS'); push(62, 256); // 256 = ByLayer
+  // 色はByLayer(256)ではなく明示指定にする。古いIllustrator等はByLayerを
+  // 解決せず全部同色(黒)になり、CUT/SCOREが区別できなくなるため。
+  const color = layer === 'SCORE' ? 5 : 1; // 1=赤(CUT), 5=青(SCORE)
+  push(0, 'LINE'); push(8, layer); push(6, 'CONTINUOUS'); push(62, color);
   push(10, p[0]); push(20, p[1]); push(30, 0);
   push(11, q[0]); push(21, q[1]); push(31, 0);
 }
