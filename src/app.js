@@ -78,6 +78,12 @@ function finishLoad(welded) {
 
   const ext = modelExtent(tri);
   log(`モデル寸法: ${ext.size.map((s)=>s.toFixed(1)).join(' × ')} (STL単位=mm想定)`);
+  // 大きすぎるモデルは処理が重い（面数はマージで激減するが、生三角形が多いと重い）
+  const nTri = tri.faces.length;
+  if (nTri > 200000)
+    log(`警告: 三角形が非常に多い（${nTri.toLocaleString()}）。処理に時間がかかり、ブラウザが一時的に止まることがあります。減面してからの読み込みを推奨します。`, 'warn');
+  else if (nTri > 40000)
+    log(`注意: 三角形が多め（${nTri.toLocaleString()}）。展開に数秒かかる場合があります。`, 'warn');
   viewer.setMesh(tri);
   unfoldNow();
 }
@@ -85,6 +91,7 @@ function finishLoad(welded) {
 // --- 展開実行 ---
 function unfoldNow() {
   if (!state.triMesh) { log('先にモデルを読み込んでください', 'warn'); return; }
+  const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
   const mergeDeg = parseFloat($('mergeAngle').value) || 0.1;
   const merged = mergeCoplanar(state.triMesh, mergeDeg * Math.PI / 180);
   state.mesh = merged;
@@ -107,6 +114,7 @@ function unfoldNow() {
   const baseOpts = {
     tabs: $('useTabs').checked,
     tabHeight: parseFloat($('tabHeight').value) || 5,
+    clearance: Math.max(0, parseFloat($('clearance').value) || 0),
     engrave: $('engrave').checked,
     pageW: page.pageW,
     pageH: page.pageH,
@@ -137,6 +145,8 @@ function unfoldNow() {
     log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
   if (layout.tabStats && (layout.tabStats.shortened || layout.tabStats.deleted))
     log(`のりしろ干渉調整: ${layout.tabStats.shortened} 個を短縮 / ${layout.tabStats.deleted} 個を削除`, 'warn');
+  const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
+  log(`処理時間: ${Math.round(t1 - t0)} ms`);
 
   // 3Dビューの辺色分け（折り=緑, 切り=赤）
   const ec = new Map();
@@ -165,8 +175,22 @@ function currentSVGs() {
   return toPaperSVG(state.layout, { numbers: true });
 }
 
+// 2Dプレビューの凡例を出力モードに合わせて切り替える（#7）
+function updateLegend() {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const el = $('legend2d');
+  if (!el) return;
+  if (mode === 'laser') {
+    const eng = $('engrave').checked ? '<span class="lg-eng">ENGRAVE</span>' : '';
+    el.innerHTML = '<span class="lg-lcut">CUT</span><span class="lg-score">SCORE</span>' + eng;
+  } else {
+    el.innerHTML = '<span class="lg-cut">切り</span><span class="lg-mtn">山</span><span class="lg-val">谷</span>';
+  }
+}
+
 function renderPreview() {
   if (!state.layout) return;
+  updateLegend();
   const svgs = currentSVGs();
   const holder = $('preview');
   holder.innerHTML = '';
@@ -248,7 +272,7 @@ $('dlDxf').addEventListener('click', downloadDXF);
 $('printBtn').addEventListener('click', () => window.print());
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', renderPreview));
-['mergeAngle', 'tabHeight', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
+['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
   $(id).addEventListener('change', () => { if (state.triMesh) unfoldNow(); }));
 
 // 用紙サイズ切替: カスタム時のみW×H入力を表示
