@@ -1,5 +1,27 @@
 import { chromium } from 'playwright';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, writeFileSync, readFileSync, mkdirSync } from 'fs';
+import { cube } from '../src/samples.js';
+
+// 6個の離れた立方体のバイナリSTLを生成（複数ページ印刷の検証用）
+function sixCubesSTL() {
+  const tris = [];
+  for (let i = 0; i < 6; i++) {
+    const o = [(i % 3) * 80, Math.floor(i / 3) * 80, 0];
+    for (const t of cube(30)) tris.push(t.map((v) => [v[0] + o[0], v[1] + o[1], v[2] + o[2]]));
+  }
+  const buf = new ArrayBuffer(84 + tris.length * 50);
+  const dv = new DataView(buf);
+  dv.setUint32(80, tris.length, true);
+  let off = 84;
+  for (const t of tris) {
+    off += 12;
+    for (const v of t) { dv.setFloat32(off, v[0], true); dv.setFloat32(off + 4, v[1], true); dv.setFloat32(off + 8, v[2], true); off += 12; }
+    off += 2;
+  }
+  mkdirSync('scratch', { recursive: true });
+  writeFileSync('scratch/six.stl', Buffer.from(buf));
+  return 'scratch/six.stl';
+}
 
 // Chromium の実行パスを解決する。環境変数優先、次に playwright 既定、
 // 最後に /opt/pw-browsers を走査（web実行環境などプリインストール対応）。
@@ -89,6 +111,20 @@ const canvasH = await page.$eval('#view3d', (c) => c.getBoundingClientRect().hei
 console.log('mobile canvas height:', Math.round(canvasH), canvasH > 50 ? 'ok' : 'FAIL');
 if (canvasH <= 50) errors.push('mobile canvas height collapsed: ' + canvasH);
 await page.setViewportSize({ width: 1400, height: 900 });
+
+// 複数ページ印刷: プレビューのページ数と印刷PDFのシート数が一致すること
+{
+  const stl = sixCubesSTL();
+  await page.setInputFiles('#file', stl);
+  await page.waitForTimeout(500);
+  const prevPages = await page.$$eval('#preview .page', (e) => e.length);
+  await page.pdf({ path: 'scratch/ui_print.pdf', preferCSSPageSize: true });
+  const pdf = readFileSync('scratch/ui_print.pdf');
+  const m = /\/Count\s+(\d+)/.exec(pdf.toString('latin1'));
+  const pdfPages = m ? parseInt(m[1], 10) : 0;
+  console.log(`print: preview pages=${prevPages}, PDF sheets=${pdfPages}`, prevPages > 1 && pdfPages === prevPages ? 'ok' : 'FAIL');
+  if (!(prevPages > 1 && pdfPages === prevPages)) errors.push(`print sheets mismatch: preview=${prevPages} pdf=${pdfPages}`);
+}
 
 await page.screenshot({ path: 'scratch/ui.png', fullPage: false });
 
