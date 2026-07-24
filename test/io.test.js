@@ -68,8 +68,13 @@ const layout = buildLayout(m, r, { tabs: true });
 const dxf = toDXF(layout);
 const lines = dxf.split(/\r\n/);
 const count = (s) => lines.filter((l) => l === s).length;
-check('DXF: SECTION/ENDSEC 対応', count('SECTION') === count('ENDSEC') && count('SECTION') === 3);
+// HEADER / TABLES / BLOCKS / ENTITIES の4セクション
+check('DXF: SECTION/ENDSEC 対応(4)', count('SECTION') === count('ENDSEC') && count('SECTION') === 4);
 check('DXF: EOF あり', lines.includes('EOF'));
+check('DXF: R12ヘッダ($ACADVER=AC1009)', dxf.includes('$ACADVER') && dxf.includes('AC1009'));
+check('DXF: LTYPE CONTINUOUS 定義あり(Illustrator対策)', dxf.includes('LTYPE') && dxf.includes('CONTINUOUS'));
+check('DXF: STYLE STANDARD 定義あり', dxf.includes('STYLE') && dxf.includes('STANDARD'));
+check('DXF: BLOCKSセクションあり', dxf.includes('BLOCKS'));
 check('DXF: CUTレイヤーのLINEあり', dxf.includes('LINE') && dxf.includes('CUT'));
 check('DXF: SCOREレイヤーあり', dxf.includes('SCORE'));
 check('DXF: mm単位($INSUNITS=4)', dxf.includes('$INSUNITS'));
@@ -77,6 +82,19 @@ check('DXF: mm単位($INSUNITS=4)', dxf.includes('$INSUNITS'));
 // LINEの数 = CUT本数 + SCORE本数（のりしろは3辺）と辻褄が合うか（下限チェック）
 const nLine = count('LINE');
 check('DXF: LINEエンティティが十分ある', nLine >= r.foldEdges.length, `${nLine}`);
+
+// 実際のDXFパーサで構文検証（Illustrator/CAD互換の担保）
+try {
+  const { default: DxfParser } = await import('dxf-parser');
+  const parsed = new DxfParser().parseSync(dxf);
+  const layers = Object.keys(parsed.tables.layer.layers);
+  check('DXF: パーサで解析成功', parsed.entities.length > 0);
+  check('DXF: CUT/SCOREレイヤーが定義済み', layers.includes('CUT') && layers.includes('SCORE'));
+  check('DXF: 全エンティティのレイヤーが定義済み',
+    parsed.entities.every((e) => layers.includes(e.layer)));
+} catch (e) {
+  check('DXF: パーサで解析成功', false, e.message);
+}
 
 // レーザーSVGのストロークがヘアライン
 const lsvg = toLaserSVG(layout)[0];

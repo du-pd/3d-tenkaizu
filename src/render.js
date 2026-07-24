@@ -137,48 +137,86 @@ ${body}
 </svg>`;
 }
 
-// ---- DXF (R12 ASCII): レーザー/CAD向け。レイヤー CUT / SCORE に分離 ----
+// ---- DXF (R12 / AC1009 ASCII): レーザー/CAD向け。レイヤー CUT / SCORE に分離 ----
 // SVGはY下向き、DXFはY上向きなので反転する。
+// Illustrator のDXF読み込みは要求が厳しいので、$ACADVER・LTYPE/LAYER/STYLE
+// テーブル・(空)BLOCKSセクション・図面範囲(EXTMIN/EXTMAX)まで含むフル構成にする。
+// Rhino/LightBurn 等でも問題なく開ける。
 export function toDXF(layout, opts = {}) {
-  const { pageH } = layout;
-  const flipY = (y) => pageH - y; // 各ページ内で反転
-  const out = [];
-  const push = (code, val) => { out.push(code); out.push(String(val)); };
+  const flipY = (y) => layout.pageH - y; // 各ページ内で反転
 
-  // ヘッダ + レイヤーテーブル
-  push(0, 'SECTION'); push(2, 'HEADER');
-  push(9, '$INSUNITS'); push(70, 4); // 4 = mm
-  push(0, 'ENDSEC');
-
-  push(0, 'SECTION'); push(2, 'TABLES');
-  push(0, 'TABLE'); push(2, 'LAYER'); push(70, 2);
-  layerDef(push, 'CUT', 1);   // 1 = red
-  layerDef(push, 'SCORE', 5); // 5 = blue
-  push(0, 'ENDTAB');
-  push(0, 'ENDSEC');
-
-  push(0, 'SECTION'); push(2, 'ENTITIES');
-
-  // 複数ページある場合はページごとにX方向へずらして1ファイルにまとめる
+  // 1) まず全セグメントを集めて図面範囲を求める
+  const segs = []; // { p, q, layer }
   layout.pages.forEach((page, pi) => {
     const pageOffX = pi * (layout.pageW + 20);
     for (const { pd, offset } of page.parts) {
       const T = (p) => [p[0] + offset[0] + pageOffX, flipY(p[1] + offset[1])];
       for (const tab of pd.tabs) {
         const poly = tab.poly.map(T);
-        // のりしろ外側3辺
-        dxfLine(push, poly[0], poly[1], 'CUT');
-        dxfLine(push, poly[1], poly[2], 'CUT');
-        dxfLine(push, poly[2], poly[3], 'CUT');
+        segs.push({ p: poly[0], q: poly[1], layer: 'CUT' });
+        segs.push({ p: poly[1], q: poly[2], layer: 'CUT' });
+        segs.push({ p: poly[2], q: poly[3], layer: 'CUT' });
       }
-      for (const c of pd.cutLines) dxfLine(push, T(c.p), T(c.q), 'CUT');
+      for (const c of pd.cutLines) segs.push({ p: T(c.p), q: T(c.q), layer: 'CUT' });
       if (opts.scoreFolds !== false) {
-        for (const f of pd.foldLines) dxfLine(push, T(f.p), T(f.q), 'SCORE');
+        for (const f of pd.foldLines) segs.push({ p: T(f.p), q: T(f.q), layer: 'SCORE' });
       }
     }
   });
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const s of segs) {
+    for (const pt of [s.p, s.q]) {
+      if (pt[0] < minX) minX = pt[0];
+      if (pt[1] < minY) minY = pt[1];
+      if (pt[0] > maxX) maxX = pt[0];
+      if (pt[1] > maxY) maxY = pt[1];
+    }
+  }
+  if (!isFinite(minX)) { minX = minY = 0; maxX = layout.pageW; maxY = layout.pageH; }
+
+  const out = [];
+  const push = (code, val) => { out.push(String(code)); out.push(String(val)); };
+
+  // ---- HEADER ----
+  push(0, 'SECTION'); push(2, 'HEADER');
+  push(9, '$ACADVER'); push(1, 'AC1009');   // R12。Illustratorが要求する
+  push(9, '$INSUNITS'); push(70, 4);         // 4 = mm
+  push(9, '$EXTMIN'); push(10, minX); push(20, minY); push(30, 0);
+  push(9, '$EXTMAX'); push(10, maxX); push(20, maxY); push(30, 0);
+  push(9, '$LIMMIN'); push(10, 0); push(20, 0);
+  push(9, '$LIMMAX'); push(10, layout.pageW); push(20, layout.pageH);
+  push(0, 'ENDSEC');
+
+  // ---- TABLES: LTYPE, LAYER, STYLE ----
+  push(0, 'SECTION'); push(2, 'TABLES');
+
+  push(0, 'TABLE'); push(2, 'LTYPE'); push(70, 1);
+  push(0, 'LTYPE'); push(2, 'CONTINUOUS'); push(70, 0);
+  push(3, 'Solid line'); push(72, 65); push(73, 0); push(40, 0);
+  push(0, 'ENDTAB');
+
+  push(0, 'TABLE'); push(2, 'LAYER'); push(70, 2);
+  layerDef(push, 'CUT', 1);   // 1 = red
+  layerDef(push, 'SCORE', 5); // 5 = blue
+  push(0, 'ENDTAB');
+
+  push(0, 'TABLE'); push(2, 'STYLE'); push(70, 1);
+  push(0, 'STYLE'); push(2, 'STANDARD'); push(70, 0);
+  push(40, 0); push(41, 1); push(50, 0); push(71, 0); push(42, 2.5);
+  push(3, 'txt'); push(4, '');
+  push(0, 'ENDTAB');
 
   push(0, 'ENDSEC');
+
+  // ---- BLOCKS（空でも必須。Illustrator対策）----
+  push(0, 'SECTION'); push(2, 'BLOCKS');
+  push(0, 'ENDSEC');
+
+  // ---- ENTITIES ----
+  push(0, 'SECTION'); push(2, 'ENTITIES');
+  for (const s of segs) dxfLine(push, s.p, s.q, s.layer);
+  push(0, 'ENDSEC');
+
   push(0, 'EOF');
   return out.join('\r\n') + '\r\n';
 }
@@ -187,7 +225,7 @@ function layerDef(push, name, color) {
   push(0, 'LAYER'); push(2, name); push(70, 0); push(62, color); push(6, 'CONTINUOUS');
 }
 function dxfLine(push, p, q, layer) {
-  push(0, 'LINE'); push(8, layer);
+  push(0, 'LINE'); push(8, layer); push(6, 'CONTINUOUS'); push(62, 256); // 256 = ByLayer
   push(10, p[0]); push(20, p[1]); push(30, 0);
   push(11, q[0]); push(21, q[1]); push(31, 0);
 }
