@@ -5,7 +5,7 @@ import { buildSpanningTree, unfoldMesh } from './unfold.js';
 import { buildLayout } from './layout.js';
 import { toPaperSVG, toLaserSVG, toDXF } from './render.js';
 import { Viewer3D } from './viewer3d.js';
-import { cube, tetrahedron, octahedron, dodecahedron } from '../test/shapes.js';
+import { cube, tetrahedron, octahedron, dodecahedron } from './samples.js';
 
 const $ = (id) => document.getElementById(id);
 
