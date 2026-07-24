@@ -9,15 +9,25 @@
   "scripts": {
     "test": "node test/pipeline.test.js && node test/io.test.js",
     "test:ui": "node test/ui.test.mjs",
+    "build": "node build.js",
     "serve": "python3 -m http.server 8123"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/du-pd/3d-tenkaizu.git"
   },
-  "keywords": ["papercraft", "unfold", "stl", "svg", "dxf", "laser", "tenkaizu"],
+  "keywords": [
+    "papercraft",
+    "unfold",
+    "stl",
+    "svg",
+    "dxf",
+    "laser",
+    "tenkaizu"
+  ],
   "license": "MIT",
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "playwright": "^1.61.1"
   }
 }
