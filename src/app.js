@@ -173,6 +173,7 @@ function dashOpts() {
     dashed,
     len: Math.max(0.2, parseFloat($('dashLen').value) || 3),
     gap: Math.max(0, parseFloat($('dashGap').value) || 2),
+    distinguish: $('distinguishFolds').checked, // 山=一点鎖線 / 谷=破線
   };
 }
 
@@ -191,7 +192,11 @@ function updateLegend() {
   if (!el) return;
   if (mode === 'laser') {
     const eng = $('engrave').checked ? '<span class="lg-eng">ENGRAVE</span>' : '';
-    el.innerHTML = '<span class="lg-lcut">CUT</span><span class="lg-score">SCORE</span>' + eng;
+    const distinguish = $('foldStyle').value === 'dashed' && $('distinguishFolds').checked;
+    const score = distinguish
+      ? '<span class="lg-lmtn">山(SCORE)</span><span class="lg-lval">谷(SCORE)</span>'
+      : '<span class="lg-score">SCORE</span>';
+    el.innerHTML = '<span class="lg-lcut">CUT</span>' + score + eng;
   } else {
     el.innerHTML = '<span class="lg-cut">切り</span><span class="lg-mtn">山</span><span class="lg-val">谷</span>';
   }
@@ -291,9 +296,11 @@ $('paper').addEventListener('change', () => {
 });
 
 // 折り線の破線設定はレンダリングのみに影響（再展開は不要）
-['foldStyle', 'dashLen', 'dashGap'].forEach((id) =>
+['foldStyle', 'dashLen', 'dashGap', 'distinguishFolds'].forEach((id) =>
   $(id).addEventListener('change', () => {
-    $('dashRow').hidden = $('foldStyle').value !== 'dashed';
+    const dashed = $('foldStyle').value === 'dashed';
+    $('dashRow').hidden = !dashed;
+    $('distinguishRow').hidden = !dashed;
     renderPreview();
   }));
 

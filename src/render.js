@@ -84,9 +84,9 @@ export function toLaserSVG(layout, opts = {}) {
     const cut = [];
     const score = [];
     const mark = [];
-    // スコア線を出力（破線なら実際の線分に分割）
-    const emitScore = (p, q) => {
-      for (const [a, b] of scoreSegments(p, q, dash)) score.push(lineEl(a, b, scoreColor, strokeW));
+    // スコア線を出力（破線なら実際の線分に分割、山谷でパターンを変える）
+    const emitScore = (p, q, kind) => {
+      for (const [a, b] of foldSegments(p, q, dash, kind)) score.push(lineEl(a, b, scoreColor, strokeW));
     };
     for (const { pd, offset } of page.parts) {
       const T = (p) => [p[0] + offset[0], p[1] + offset[1]];
@@ -98,10 +98,10 @@ export function toLaserSVG(layout, opts = {}) {
       for (const c of pd.cutLines) {
         cut.push(lineEl(T(c.p), T(c.q), cutColor, strokeW));
       }
-      // スコア: 折り線 ＋ のりしろ付け根（低出力でスジ入れ）
+      // スコア: 折り線（山谷でパターンを変える） ＋ のりしろ付け根（低出力でスジ入れ）
       if (scoreFolds) {
-        for (const f of pd.foldLines) emitScore(T(f.p), T(f.q));
-        for (const tab of pd.tabs) emitScore(T(tab.base[0]), T(tab.base[1]));
+        for (const f of pd.foldLines) emitScore(T(f.p), T(f.q), f.mountain ? 'mountain' : 'valley');
+        for (const tab of pd.tabs) emitScore(T(tab.base[0]), T(tab.base[1]), 'tab');
       }
       // 刻印: 番号
       if (engrave) {
@@ -160,6 +160,38 @@ export function scoreSegments(p, q, dash) {
   return [[[p[0], p[1]], [q[0], q[1]]]];
 }
 
+// 任意の線種パターンで線分に分割する。pattern = [on, off, on, off, ...] (mm)。
+// 例: 破線 [3,2] / 一点鎖線 [3,2,0.6,2]。ONの区間だけを線分として返す。中央揃え。
+export function patternSegments(p, q, pattern) {
+  const dx = q[0] - p[0], dy = q[1] - p[1];
+  const L = Math.hypot(dx, dy);
+  if (L < 1e-9) return [];
+  const ux = dx / L, uy = dy / L;
+  const at = (d) => [p[0] + ux * d, p[1] + uy * d];
+  const segs = [];
+  const emit = (s, e) => { s = Math.max(0, s); e = Math.min(L, e); if (e - s > 1e-6) segs.push([at(s), at(e)]); };
+  const first = Math.max(0.1, pattern[0]);
+  if (L <= first) { const h = Math.min(first, L); emit((L - h) / 2, (L + h) / 2); return segs; } // 短辺は1本
+  const period = pattern.reduce((a, b) => a + b, 0);
+  const n = Math.max(1, Math.floor(L / period)); // 収まる周期数
+  let pos = (L - n * period) / 2; // 全周期を中央揃え（端は余白 or わずかにクリップ）
+  for (let k = 0; k < n; k++) {
+    let d = pos + k * period, on = true;
+    for (const seg of pattern) { if (on) emit(d, d + seg); d += seg; on = !on; }
+  }
+  return segs;
+}
+
+// 折り線の分割。kind: 'mountain' | 'valley' | 'tab'。
+// dash.distinguish が真なら 山折り=一点鎖線 / 谷折り=破線 でパターンを変える。
+export function foldSegments(p, q, dash, kind) {
+  if (!dash || !dash.dashed) return [[[p[0], p[1]], [q[0], q[1]]]];
+  const len = dash.len ?? 3, gap = dash.gap ?? 2, dot = dash.dot ?? 0.6;
+  if (dash.distinguish && kind === 'mountain') return patternSegments(p, q, [len, gap, dot, gap]);
+  // 谷折り・のりしろ付け根・区別なし → 破線
+  return dashSegments(p, q, len, gap);
+}
+
 function wrapSVG(w, h, body, meta = {}) {
   const inks = meta.inkscape
     ? ' xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"'
@@ -179,11 +211,11 @@ ${body}
 export function toDXF(layout, opts = {}) {
   const flipY = (y) => layout.pageH - y; // 各ページ内で反転
 
-  const dash = opts.dash; // { dashed, len, gap }
+  const dash = opts.dash; // { dashed, len, gap, distinguish }
   // 1) まず全セグメントを集めて図面範囲を求める
   const segs = []; // { p, q, layer }
-  const addScore = (p, q) => {
-    for (const [a, b] of scoreSegments(p, q, dash)) segs.push({ p: a, q: b, layer: 'SCORE' });
+  const addScore = (p, q, kind) => {
+    for (const [a, b] of foldSegments(p, q, dash, kind)) segs.push({ p: a, q: b, layer: 'SCORE' });
   };
   layout.pages.forEach((page, pi) => {
     const pageOffX = pi * (layout.pageW + 20);
@@ -195,11 +227,11 @@ export function toDXF(layout, opts = {}) {
         segs.push({ p: o[0], q: o[1], layer: 'CUT' });
         segs.push({ p: o[1], q: o[2], layer: 'CUT' });
         segs.push({ p: o[2], q: o[3], layer: 'CUT' });
-        if (opts.scoreFolds !== false) addScore(T(tab.base[0]), T(tab.base[1]));
+        if (opts.scoreFolds !== false) addScore(T(tab.base[0]), T(tab.base[1]), 'tab');
       }
       for (const c of pd.cutLines) segs.push({ p: T(c.p), q: T(c.q), layer: 'CUT' });
       if (opts.scoreFolds !== false) {
-        for (const f of pd.foldLines) addScore(T(f.p), T(f.q));
+        for (const f of pd.foldLines) addScore(T(f.p), T(f.q), f.mountain ? 'mountain' : 'valley');
       }
     }
   });
