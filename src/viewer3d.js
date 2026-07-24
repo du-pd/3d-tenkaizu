@@ -1,0 +1,122 @@
+// 依存なしの簡易3Dビューア（Canvas 2D + 手書き投影）。
+// CDN不要で単一サイトに完結させるため、Three.jsは使わずに自前実装する。
+// マウスドラッグで回転、ホイールでズーム。面は簡易フラットシェーディング、
+// 辺は「折り線=緑 / 切り線=赤」で色分けできる（展開結果を渡した場合）。
+import { sub, cross, dot, normalize } from './vec.js';
+
+export class Viewer3D {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.rotX = -0.5;
+    this.rotY = 0.6;
+    this.dist = 3.2;
+    this.mesh = null;
+    this.edgeColors = null; // Map edgeKey -> '#hex'
+    this._bind();
+  }
+
+  setMesh(mesh) {
+    this.mesh = mesh;
+    // 中心化・正規化
+    const vs = mesh.vertices;
+    let mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (const v of vs) for (let k = 0; k < 3; k++) {
+      if (v[k] < mn[k]) mn[k] = v[k];
+      if (v[k] > mx[k]) mx[k] = v[k];
+    }
+    this.center = [(mn[0]+mx[0])/2, (mn[1]+mx[1])/2, (mn[2]+mx[2])/2];
+    this.scale = Math.max(mx[0]-mn[0], mx[1]-mn[1], mx[2]-mn[2]) || 1;
+    this.draw();
+  }
+
+  setEdgeColors(map) { this.edgeColors = map; this.draw(); }
+
+  _bind() {
+    let dragging = false, lx = 0, ly = 0;
+    this.canvas.addEventListener('pointerdown', (e) => {
+      dragging = true; lx = e.clientX; ly = e.clientY;
+      this.canvas.setPointerCapture(e.pointerId);
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      this.rotY += (e.clientX - lx) * 0.01;
+      this.rotX += (e.clientY - ly) * 0.01;
+      lx = e.clientX; ly = e.clientY;
+      this.draw();
+    });
+    this.canvas.addEventListener('pointerup', () => { dragging = false; });
+    this.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.dist *= e.deltaY > 0 ? 1.1 : 0.9;
+      this.dist = Math.max(1.4, Math.min(12, this.dist));
+      this.draw();
+    }, { passive: false });
+  }
+
+  _project(p) {
+    // 中心化＆正規化
+    let x = (p[0] - this.center[0]) / this.scale;
+    let y = (p[1] - this.center[1]) / this.scale;
+    let z = (p[2] - this.center[2]) / this.scale;
+    // Y回転
+    let cy = Math.cos(this.rotY), sy = Math.sin(this.rotY);
+    let x1 = x * cy + z * sy;
+    let z1 = -x * sy + z * cy;
+    // X回転
+    let cx = Math.cos(this.rotX), sx = Math.sin(this.rotX);
+    let y1 = y * cx - z1 * sx;
+    let z2 = y * sx + z1 * cx;
+    // 透視投影
+    const w = this.canvas.width, h = this.canvas.height;
+    const f = (Math.min(w, h) * 0.45) / (this.dist);
+    const persp = this.dist / (this.dist - z2);
+    return [w / 2 + x1 * f * persp, h / 2 - y1 * f * persp, z2];
+  }
+
+  draw() {
+    const ctx = this.ctx, w = this.canvas.width, h = this.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#f7f8fa';
+    ctx.fillRect(0, 0, w, h);
+    if (!this.mesh) return;
+    const { vertices, faces } = this.mesh;
+
+    // 面を奥行きでソート（画家のアルゴリズム）
+    const projs = vertices.map((v) => this._project(v));
+    const order = faces.map((f, i) => {
+      let z = 0;
+      for (const vi of f.verts) z += projs[vi][2];
+      return { i, z: z / f.verts.length };
+    }).sort((a, b) => a.z - b.z);
+
+    const light = normalize([0.4, 0.6, 1]);
+    for (const { i } of order) {
+      const f = faces[i];
+      // 法線から陰影
+      const a = vertices[f.verts[0]], b = vertices[f.verts[1]], c = vertices[f.verts[2]];
+      let n = normalize(cross(sub(b, a), sub(c, a)));
+      // ビュー空間の向き（rotで回した法線のZを見る）→ 簡易に world法線・light
+      const shade = 0.55 + 0.45 * Math.max(0, dot(n, light));
+      const col = Math.round(200 * shade);
+      ctx.beginPath();
+      f.verts.forEach((vi, k) => {
+        const p = projs[vi];
+        if (k === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+      });
+      ctx.closePath();
+      ctx.fillStyle = `rgb(${col},${col+15},${col+30})`;
+      ctx.fill();
+      // 辺
+      ctx.lineWidth = 1;
+      f.verts.forEach((vi, k) => {
+        const vj = f.verts[(k + 1) % f.verts.length];
+        const key = vi < vj ? vi + '_' + vj : vj + '_' + vi;
+        const p = projs[vi], q = projs[vj];
+        ctx.strokeStyle = (this.edgeColors && this.edgeColors.get(key)) || '#33373d';
+        ctx.beginPath();
+        ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
+      });
+    }
+  }
+}
