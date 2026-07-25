@@ -14,6 +14,8 @@ export class Viewer3D {
     this.zoom = 0.52;  // 画面充填率（min(w,h)に対する倍率）。ホイールで変える
     this.mesh = null;
     this.edgeColors = null; // Map edgeKey -> '#hex'
+    this.edgePicker = null;
+    this.interactive = false;
     this.dpr = 1;
     this._bind();
     // 表示サイズに描画バッファを合わせる（横圧縮を防ぐ）
@@ -53,21 +55,35 @@ export class Viewer3D {
   }
 
   setEdgeColors(map) { this.edgeColors = map; this.draw(); }
+  setEdgePicker(fn) { this.edgePicker = fn; }
+  setInteractive(enabled) {
+    this.interactive = enabled;
+    this.canvas.style.cursor = enabled ? 'crosshair' : '';
+  }
 
   _bind() {
-    let dragging = false, lx = 0, ly = 0;
+    let dragging = false, moved = false, lx = 0, ly = 0, sx = 0, sy = 0;
     this.canvas.addEventListener('pointerdown', (e) => {
-      dragging = true; lx = e.clientX; ly = e.clientY;
+      dragging = true; moved = false; lx = e.clientX; ly = e.clientY; sx = e.clientX; sy = e.clientY;
       this.canvas.setPointerCapture(e.pointerId);
     });
     this.canvas.addEventListener('pointermove', (e) => {
       if (!dragging) return;
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 4) moved = true;
       this.rotY += (e.clientX - lx) * 0.01;
       this.rotX += (e.clientY - ly) * 0.01;
       lx = e.clientX; ly = e.clientY;
       this.draw();
     });
-    this.canvas.addEventListener('pointerup', () => { dragging = false; });
+    this.canvas.addEventListener('pointerup', (e) => {
+      dragging = false;
+      this.canvas.releasePointerCapture?.(e.pointerId);
+      if (!moved && this.interactive && this.edgePicker) {
+        const pick = this.pickEdge(e.clientX, e.clientY);
+        if (pick) this.edgePicker(pick.key);
+      }
+    });
+    this.canvas.addEventListener('pointercancel', () => { dragging = false; });
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.zoom *= e.deltaY > 0 ? 0.9 : 1.1;
@@ -95,6 +111,23 @@ export class Viewer3D {
     const f = Math.min(w, h) * this.zoom;
     const persp = this.camZ / (this.camZ - z2);
     return [w / 2 + x1 * f * persp, h / 2 - y1 * f * persp, z2];
+  }
+
+  pickEdge(clientX, clientY) {
+    if (!this.mesh) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (clientX - rect.left) * this.dpr;
+    const y = (clientY - rect.top) * this.dpr;
+    const projs = this.mesh.vertices.map((v) => this._project(v));
+    let best = null;
+    const thresholdSq = Math.pow(12 * this.dpr, 2);
+    for (const [key, edge] of this.mesh.edgeMap || []) {
+      const p = projs[edge.a], q = projs[edge.b];
+      const distSq = pointSegDistSq(x, y, p, q);
+      if (distSq > thresholdSq) continue;
+      if (!best || distSq < best.distSq) best = { key, distSq };
+    }
+    return best;
   }
 
   draw() {
@@ -143,4 +176,17 @@ export class Viewer3D {
       });
     }
   }
+
+}
+
+function pointSegDistSq(x, y, p, q) {
+  const vx = q[0] - p[0], vy = q[1] - p[1];
+  const wx = x - p[0], wy = y - p[1];
+  const vv = vx * vx + vy * vy;
+  if (vv < 1e-9) return wx * wx + wy * wy;
+  let t = (wx * vx + wy * vy) / vv;
+  t = Math.max(0, Math.min(1, t));
+  const dx = p[0] + vx * t - x;
+  const dy = p[1] + vy * t - y;
+  return dx * dx + dy * dy;
 }

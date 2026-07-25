@@ -123,6 +123,7 @@
   fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 10px 0 0; padding: 9px 11px 11px; }
   legend { font-size: 11px; color: var(--sub); padding: 0 5px; font-weight: 700; letter-spacing: .03em; }
   .hint { font-size: 11px; color: var(--faint); margin-top: 5px; line-height: 1.55; }
+  .statusline { font-size: 11px; color: var(--sub); margin-top: 8px; min-height: 1.4em; }
 
   .legend2d { font-size: 11px; color: var(--sub); display: flex; gap: 16px; flex-wrap: wrap; }
   .legend2d span { display: inline-flex; align-items: center; }
@@ -214,6 +215,14 @@
       </fieldset>
 
       <div class="btnrow"><button id="unfoldBtn" class="block">展開する</button></div>
+      <div class="statusline" id="processingHint" aria-live="polite"></div>
+      <fieldset>
+        <legend>手動カット</legend>
+        <div class="row"><input type="checkbox" id="editCuts"><label for="editCuts">3Dプレビューで辺をクリックして切り線に固定</label></div>
+        <div class="hint">折り線をクリックするとその辺を強制的に切り線へ変更して再展開します。境界辺や既に切り線の辺は変更されません。</div>
+        <div class="hint" id="manualCutSummary">強制カット: なし</div>
+        <div class="btnrow"><button id="clearCuts" type="button" class="ghost block">強制カットをクリア</button></div>
+      </fieldset>
     </div>
 
     <div class="card">
@@ -277,8 +286,8 @@
   <!-- 右: プレビュー2枚 -->
   <div class="previews">
     <section class="panel p3d">
-      <div class="phead"><h2>3Dプレビュー</h2><span class="meta">ドラッグで回転 / ホイールでズーム</span></div>
-      <div class="canvaswrap"><canvas id="view3d" role="img" aria-label="読み込んだ3Dモデルのプレビュー。ドラッグで回転、ホイールで拡大縮小。緑=切り線、赤=山折り、青=谷折り。"></canvas></div>
+      <div class="phead"><h2>3Dプレビュー</h2><span class="meta">ドラッグで回転 / ホイールでズーム / 手動カット時はクリック</span></div>
+      <div class="canvaswrap"><canvas id="view3d" role="img" aria-label="読み込んだ3Dモデルのプレビュー。ドラッグで回転、ホイールで拡大縮小。手動カットを有効にすると辺をクリックして切り線に固定できます。緑=切り線、赤=山折り、青=谷折り。"></canvas></div>
       <div class="foot" id="foot3d">
         <span class="swatch"><i style="background:#22aa44"></i>切り線</span>
         <span class="swatch"><i style="background:#d23b3b"></i>山折り</span>

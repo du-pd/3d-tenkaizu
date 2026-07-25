@@ -103,6 +103,7 @@ export function buildLayout(mesh, unfold, opts = {}) {
     pages: packed.pages, parts: partData, cutNumber,
     pageW: packed.pageW, pageH: packed.pageH, margin: packed.margin,
     overflow: packed.overflow,
+    posterTiles: packed.posterTiles,
     tabStats: { shortened: tabShortened, deleted: tabDeleted },
   };
 }
@@ -251,7 +252,9 @@ function packA4(partData, opts) {
   const usableH = pageH - margin * 2;
 
   const sorted = partData.slice().sort((a, b) => b.bbox.w * b.bbox.h - a.bbox.w * a.bbox.h);
+  const allowPosterTiling = sorted.length === 1;
   let overflow = false;
+  let posterTiles = 0;
   const pages = [];
   let page = { parts: [] };
   let x = margin, y = margin, shelfH = 0;
@@ -259,6 +262,32 @@ function packA4(partData, opts) {
 
   for (const pd of sorted) {
     const w = pd.bbox.w, h = pd.bbox.h;
+    if (allowPosterTiling && (w > usableW || h > usableH)) {
+      const cols = Math.max(1, Math.ceil(w / usableW));
+      const rows = Math.max(1, Math.ceil(h / usableH));
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          posterTiles++;
+          pages.push({
+            parts: [{
+              pd,
+              offset: [
+                margin - pd.bbox.minX - col * usableW,
+                margin - pd.bbox.minY - row * usableH,
+              ],
+            }],
+            clipRect: { x: margin, y: margin, w: usableW, h: usableH },
+            tile: {
+              col, row, cols, rows,
+              index: row * cols + col + 1,
+              total: cols * rows,
+              part: pd.index,
+            },
+          });
+        }
+      }
+      continue;
+    }
     if (w > usableW || h > usableH) overflow = true;
     if (x + w > margin + usableW && page.parts.length > 0) { x = margin; y += shelfH + gap; shelfH = 0; }
     if (y + h > margin + usableH && page.parts.length > 0) newPage();
@@ -267,5 +296,7 @@ function packA4(partData, opts) {
     if (h > shelfH) shelfH = h;
   }
   pages.push(page);
-  return { pages, pageW, pageH, margin, overflow };
+  if (pages.length && pages[pages.length - 1].parts.length === 0 && pages.length > 1) pages.pop();
+  if (posterTiles === 0 && pages.length && pages[0].parts.length === 0) overflow = true;
+  return { pages, pageW, pageH, margin, overflow, posterTiles };
 }

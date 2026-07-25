@@ -83,6 +83,7 @@ export function buildSpanningTree(mesh) {
 export function unfoldMesh(mesh, tree, options = {}) {
   const { vertices, faces } = mesh;
   const { adj, treeEdges } = tree;
+  const forcedCuts = options.forcedCuts ?? new Set();
   const intrinsic = faces.map((f) => intrinsicCoords(vertices, f));
 
   // 展開結果: 面ごとの2D座標（グローバル座標）
@@ -108,6 +109,10 @@ export function unfoldMesh(mesh, tree, options = {}) {
       const cur = queue.shift();
       for (const { to, edge } of adj.get(cur)) {
         if (visited[to]) continue;
+        if (forcedCuts.has(edge.key)) {
+          cutTreeEdges.push(edge);
+          continue;
+        }
         // cur は配置済み。to を cur の隣に展開してみる。
         const coords = placeChild(cur, to, edge);
         if (coords === null) {
@@ -174,6 +179,105 @@ export function unfoldMesh(mesh, tree, options = {}) {
   });
 
   // --- 内部ヘルパ ---
+  function overlaps(coords, cf, part) {
+    for (const other of part.faces) {
+      if (other === cf) continue;
+      if (polyOverlap(coords, placed[other])) return true;
+    }
+    return false;
+  }
+}
+
+export async function unfoldMeshAsync(mesh, tree, options = {}) {
+  const { vertices, faces } = mesh;
+  const { adj } = tree;
+  const forcedCuts = options.forcedCuts ?? new Set();
+  const intrinsic = faces.map((f) => intrinsicCoords(vertices, f));
+  const chunkSize = Math.max(1, options.chunkSize ?? 24);
+  const placed = new Array(faces.length).fill(null);
+  const facePart = new Array(faces.length).fill(-1);
+  const parts = [];
+  const usedTreeEdge = new Set();
+  const cutTreeEdges = [];
+  const visited = new Array(faces.length).fill(false);
+  let ops = 0;
+  let placedCount = 0;
+
+  for (let root = 0; root < faces.length; root++) {
+    if (visited[root]) continue;
+    const part = { faces: [], index: parts.length };
+    parts.push(part);
+    placeRoot(root, part);
+    reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
+
+    const queue = [root];
+    visited[root] = true;
+    while (queue.length) {
+      const cur = queue.shift();
+      for (const { to, edge } of adj.get(cur)) {
+        if (visited[to]) continue;
+        if (forcedCuts.has(edge.key)) {
+          cutTreeEdges.push(edge);
+          continue;
+        }
+        const coords = placeChild(cur, to, edge);
+        if (coords === null) continue;
+        if (overlaps(coords, to, part)) {
+          cutTreeEdges.push(edge);
+          continue;
+        }
+        placed[to] = coords;
+        facePart[to] = part.index;
+        part.faces.push(to);
+        usedTreeEdge.add(edge.key);
+        visited[to] = true;
+        placedCount++;
+        queue.push(to);
+        ops++;
+        if (ops % chunkSize === 0) {
+          reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
+          await yieldControl();
+        }
+      }
+    }
+  }
+
+  reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
+  return finalizeUnfold(mesh, tree, {
+    placed, facePart, parts, usedTreeEdge, cutTreeEdges,
+  });
+
+  function placeRoot(fi, part) {
+    placed[fi] = intrinsic[fi].map((p) => p.slice());
+    facePart[fi] = part.index;
+    part.faces.push(fi);
+    placedCount++;
+  }
+
+  function placeChild(pf, cf, edge) {
+    const ea = edge.ea, eb = edge.eb;
+    const pIa = faces[pf].verts.indexOf(ea);
+    const pIb = faces[pf].verts.indexOf(eb);
+    if (pIa < 0 || pIb < 0) return null;
+    const A = placed[pf][pIa];
+    const B = placed[pf][pIb];
+
+    const cIa = faces[cf].verts.indexOf(ea);
+    const cIb = faces[cf].verts.indexOf(eb);
+    if (cIa < 0 || cIb < 0) return null;
+    const sA = intrinsic[cf][cIa];
+    const sB = intrinsic[cf][cIb];
+
+    const mapped = mapEdge(intrinsic[cf], sA, sB, A, B, +1);
+    const pc = centroid(placed[pf]);
+    const cc = centroid(mapped);
+    const nrm = perp2(normalize2(sub2(B, A)));
+    const ps = Math.sign(dot2(sub2(pc, A), nrm));
+    const cs = Math.sign(dot2(sub2(cc, A), nrm));
+    if (ps === cs && ps !== 0) return mapEdge(intrinsic[cf], sA, sB, A, B, -1);
+    return mapped;
+  }
+
   function overlaps(coords, cf, part) {
     for (const other of part.faces) {
       if (other === cf) continue;
@@ -291,4 +395,12 @@ function finalizeUnfold(mesh, tree, state) {
   }
 
   return { parts, placed, facePart, foldEdges, cutEdges, cutTreeEdges };
+}
+
+function reportProgress(options, phase, info) {
+  if (typeof options.onProgress === 'function') options.onProgress({ phase, ...info });
+}
+
+function yieldControl() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
