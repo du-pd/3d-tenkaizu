@@ -1,6 +1,6 @@
 {
   "name": "3d-tenkaizu",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "3Dモデル(STL/OBJ)をペーパークラフト展開図・レーザー加工用ベクター(SVG/DXF)に変換するブラウザ完結型ツール",
   "type": "module",
   "directories": {
