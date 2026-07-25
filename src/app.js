@@ -207,9 +207,8 @@ async function unfoldNow() {
     }
 
     const page = paperSize();
-    const mode = document.querySelector('input[name="mode"]:checked').value;
     const baseOpts = {
-      tabs: mode === 'paper' && $('useTabs').checked,
+      tabs: $('useTabs').checked,
       tabHeight: parseFloat($('tabHeight').value) || 5,
       clearance: Math.max(0, parseFloat($('clearance').value) || 0),
       engrave: $('engrave').checked,

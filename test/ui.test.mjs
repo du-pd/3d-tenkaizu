@@ -83,6 +83,8 @@ const svgHTML = await page.$eval('#preview .page svg', (el) => el.outerHTML);
 console.log('laser svg has CUT layer:', /id="cut"/.test(svgHTML));
 console.log('laser svg has SCORE layer:', /id="score"/.test(svgHTML));
 console.log('laser svg mm units:', /mm"/.test(svgHTML));
+console.log('laser svg keeps connection tabs:', /<polyline/.test(svgHTML));
+if (!/<polyline/.test(svgHTML)) errors.push('connection tabs disappeared in laser mode');
 
 // 実寸スケール: 目標150mm
 await page.fill('#targetHeight', '150');
