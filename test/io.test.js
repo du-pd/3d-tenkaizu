@@ -123,5 +123,18 @@ console.log('== ページ分割 ==');
   check('大用紙なら1ページ', Lbig.pages.length === 1, `pages=${Lbig.pages.length}`);
 }
 
+console.log('== 単一大型パーツのポスター分割 ==');
+{
+  const Ltiled = buildLayout(m, r, { tabs: true, pageW: 80, pageH: 80, scale: 2.4 });
+  check('大型単一パーツで複数ページに分割', Ltiled.pages.length > 1, `pages=${Ltiled.pages.length}`);
+  check('ポスター分割ページ数を記録', Ltiled.posterTiles === Ltiled.pages.length, `${Ltiled.posterTiles}/${Ltiled.pages.length}`);
+  check('各ページにクリップ領域がある', Ltiled.pages.every((p) => p.clipRect && p.parts.length === 1));
+  const paperSvgs = toLaserSVG(Ltiled);
+  check('SVGが分割ページ数ぶん生成される', paperSvgs.length === Ltiled.pages.length, `${paperSvgs.length}/${Ltiled.pages.length}`);
+  check('分割SVGにクリップパスが入る', paperSvgs.every((svg) => svg.includes('<clipPath')));
+  const tiledDxf = toDXF(Ltiled);
+  check('分割時のDXFも生成できる', tiledDxf.includes('SECTION') && tiledDxf.includes('ENTITIES'));
+}
+
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
 process.exit(fail ? 1 : 0);

@@ -46,8 +46,15 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 
+async function waitForIdle() {
+  await page.waitForFunction(() => {
+    const el = document.getElementById('processingHint');
+    return el && el.textContent.trim() === '';
+  }, null, { timeout: 5000 });
+}
+
 await page.goto('http://localhost:8123/index.html', { waitUntil: 'networkidle' });
-await page.waitForTimeout(600);
+await waitForIdle();
 
 // 初期ロードで立方体が展開されているはず
 const status = await page.$eval('#status', (el) => el.innerText);
@@ -56,7 +63,7 @@ console.log('--- 初期ステータス(cube) ---\n' + status);
 // 各サンプルで展開してエラーが出ないか
 for (const s of ['dodeca', 'cube']) {
   await page.click(`[data-sample="${s}"]`);
-  await page.waitForTimeout(300);
+  await waitForIdle();
   const st = await page.$eval('#status', (el) => el.innerText);
   const parts = (st.match(/パーツ (\d+) 個/) || [])[1];
   const svgCount = await page.$$eval('#preview .page svg', (els) => els.length);
@@ -74,33 +81,37 @@ console.log('laser svg mm units:', /mm"/.test(svgHTML));
 // 実寸スケール: 目標150mm
 await page.fill('#targetHeight', '150');
 await page.dispatchEvent('#targetHeight', 'change');
-await page.waitForTimeout(300);
+await waitForIdle();
 const st2 = await page.$eval('#status', (el) => el.innerText);
 console.log('scale applied:', /スケール ×/.test(st2));
 
-// A4オーバーフロー警告（大きな十二面体）→ 自動フィットで解消
+// 大きな単一パーツはポスター分割、さらに自動フィットでも解消できる
 await page.click('input[name="mode"][value="paper"]');
 await page.fill('#targetHeight', '0');
 await page.click('[data-sample="dodeca"]');
 await page.fill('#targetHeight', '300');
 await page.dispatchEvent('#targetHeight', 'change');
-await page.waitForTimeout(300);
+await waitForIdle();
 const st3 = await page.$eval('#status', (el) => el.innerText);
-console.log('overflow warned:', /印刷範囲に収まらない/.test(st3));
+const tiledPages = await page.$$eval('#preview .page', (els) => els.length);
+console.log('poster tiling warned:', /ポスター分割/.test(st3), 'pages:', tiledPages);
+if (!/ポスター分割/.test(st3) || tiledPages < 2) errors.push(`poster tiling not applied: warned=${/ポスター分割/.test(st3)} pages=${tiledPages}`);
 await page.click('#autofit');
-await page.waitForTimeout(300);
+await waitForIdle();
 const st4 = await page.$eval('#status', (el) => el.innerText);
 console.log('autofit applied:', /自動フィット/.test(st4));
+if (!/自動フィット/.test(st4)) errors.push('autofit message missing after enabling autofit');
 
 // 用紙サイズ: A4 / A3 / カスタム で SVG viewBox が変わるか
 await page.click('[data-sample="cube"]');
+await waitForIdle();
 const vb = () => page.$eval('#preview .page svg', (el) => el.getAttribute('viewBox'));
-await page.selectOption('#paper', 'a3'); await page.waitForTimeout(200);
+await page.selectOption('#paper', 'a3'); await waitForIdle();
 console.log('A3 viewBox:', await vb(), '=>', (await vb()) === '0 0 297 420' ? 'ok' : 'FAIL');
-await page.selectOption('#paper', 'custom'); await page.waitForTimeout(200);
+await page.selectOption('#paper', 'custom'); await waitForIdle();
 const custVisible = await page.$eval('#customSize', (el) => getComputedStyle(el).display !== 'none');
 console.log('custom fields visible:', custVisible, '/ default viewBox:', await vb());
-await page.selectOption('#paper', 'a4'); await page.waitForTimeout(200);
+await page.selectOption('#paper', 'a4'); await waitForIdle();
 const custHidden = await page.$eval('#customSize', (el) => getComputedStyle(el).display === 'none');
 console.log('custom fields hidden on A4:', custHidden);
 
@@ -116,7 +127,7 @@ await page.setViewportSize({ width: 1400, height: 900 });
 {
   const stl = sixCubesSTL();
   await page.setInputFiles('#file', stl);
-  await page.waitForTimeout(500);
+  await waitForIdle();
   const prevPages = await page.$$eval('#preview .page', (e) => e.length);
   await page.pdf({ path: 'scratch/ui_print.pdf', preferCSSPageSize: true });
   const pdf = readFileSync('scratch/ui_print.pdf');

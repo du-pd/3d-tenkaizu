@@ -1,7 +1,7 @@
 // パイプライン検証: 既知形状で溶接・マージ・展開が数学的に正しいか確認する。
 import { weldTriangleSoup } from '../src/parse.js';
 import { buildTriMesh, mergeCoplanar } from '../src/mesh.js';
-import { buildSpanningTree, unfoldMesh } from '../src/unfold.js';
+import { buildSpanningTree, unfoldMesh, unfoldMeshAsync } from '../src/unfold.js';
 import { len2, sub2 } from '../src/vec.js';
 import { cube, tetrahedron, octahedron, dodecahedron } from './shapes.js';
 
@@ -63,10 +63,32 @@ function checkIsometry(mesh, res) {
   return true;
 }
 
-run('立方体 (cube)', cube(), { verts: 8, faces: 6 });
-run('正四面体 (tetra)', tetrahedron(), { verts: 4, faces: 4 });
+async function checkAsyncMatches(name, merged, tree, res) {
+  const asyncRes = await unfoldMeshAsync(merged, tree, { chunkSize: 2 });
+  check(`${name}: 非同期展開でも全面が配置される`,
+    asyncRes.parts.reduce((s, p) => s + p.faces.length, 0) === merged.faces.length);
+  check(`${name}: 非同期展開でパーツ数が一致`, asyncRes.parts.length === res.parts.length,
+    `async ${asyncRes.parts.length} sync ${res.parts.length}`);
+  check(`${name}: 非同期展開で折り線数が一致`, asyncRes.foldEdges.length === res.foldEdges.length,
+    `async ${asyncRes.foldEdges.length} sync ${res.foldEdges.length}`);
+}
+
+const cubeRes = run('立方体 (cube)', cube(), { verts: 8, faces: 6 });
+const tetraRes = run('正四面体 (tetra)', tetrahedron(), { verts: 4, faces: 4 });
 run('正八面体 (octa)', octahedron(), { verts: 6, faces: 8 });
 run('正十二面体 (dodeca)', dodecahedron(), { verts: 20, faces: 12 });
+
+await checkAsyncMatches('立方体 (cube)', cubeRes.merged, cubeRes.tree, cubeRes.res);
+await checkAsyncMatches('正四面体 (tetra)', tetraRes.merged, tetraRes.tree, tetraRes.res);
+
+{
+  const forcedKey = cubeRes.tree.treeEdges[0].key;
+  const forcedRes = unfoldMesh(cubeRes.merged, cubeRes.tree, { forcedCuts: new Set([forcedKey]) });
+  check('強制カットでパーツ数が増える', forcedRes.parts.length > cubeRes.res.parts.length,
+    `${forcedRes.parts.length} vs ${cubeRes.res.parts.length}`);
+  check('強制カット辺が折り線から外れる', !forcedRes.foldEdges.some((e) => e.key === forcedKey));
+  check('強制カット辺が切り線になる', forcedRes.cutEdges.some((e) => e.key === forcedKey));
+}
 
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
 process.exit(fail ? 1 : 0);

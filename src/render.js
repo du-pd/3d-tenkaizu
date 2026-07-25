@@ -23,7 +23,7 @@ export function toPaperSVG(layout, opts = {}) {
     for (const { pd, offset } of page.parts) {
       body.push(renderPartPaper(pd, offset, showNumbers));
     }
-    svgs.push(wrapSVG(pageW, pageH, body.join('\n'), {
+    svgs.push(wrapSVG(pageW, pageH, pageBody(page, pi, body.join('\n')), {
       title: `ペーパークラフト展開図 ページ${pi + 1}`,
     }));
   });
@@ -116,7 +116,7 @@ export function toLaserSVG(layout, opts = {}) {
       engrave ? `<g id="engrave" inkscape:label="ENGRAVE" inkscape:groupmode="layer">${mark.join('')}</g>` : '',
       `<g id="cut" inkscape:label="CUT" inkscape:groupmode="layer">${cut.join('')}</g>`,
     ].filter(Boolean);
-    svgs.push(wrapSVG(pageW, pageH, layers.join('\n'), {
+    svgs.push(wrapSVG(pageW, pageH, pageBody(page, pi, layers.join('\n')), {
       title: `レーザー展開図 ページ${pi + 1}`,
       inkscape: true,
     }));
@@ -203,6 +203,13 @@ ${body}
 </svg>`;
 }
 
+function pageBody(page, pageIndex, body) {
+  if (!page.clipRect) return body;
+  const { x, y, w, h } = page.clipRect;
+  const clipId = `clip_page_${pageIndex + 1}`;
+  return `<defs><clipPath id="${clipId}"><rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}"/></clipPath></defs><g clip-path="url(#${clipId})">${body}</g>`;
+}
+
 // ---- DXF (R12 / AC1009 ASCII): レーザー/CAD向け。レイヤー CUT / SCORE に分離 ----
 // SVGはY下向き、DXFはY上向きなので反転する。
 // Illustrator のDXF読み込みは要求が厳しいので、$ACADVER・LTYPE/LAYER/STYLE
@@ -214,11 +221,17 @@ export function toDXF(layout, opts = {}) {
   const dash = opts.dash; // { dashed, len, gap, distinguish }
   // 1) まず全セグメントを集めて図面範囲を求める
   const segs = []; // { p, q, layer }
+  const emittedTiles = new Set();
   const addScore = (p, q, kind) => {
     for (const [a, b] of foldSegments(p, q, dash, kind)) segs.push({ p: a, q: b, layer: 'SCORE' });
   };
-  layout.pages.forEach((page, pi) => {
-    const pageOffX = pi * (layout.pageW + 20);
+  let pageIndex = 0;
+  layout.pages.forEach((page) => {
+    if (page.tile) {
+      if (emittedTiles.has(page.tile.part)) return;
+      emittedTiles.add(page.tile.part);
+    }
+    const pageOffX = pageIndex++ * (layout.pageW + 20);
     for (const { pd, offset } of page.parts) {
       const T = (p) => [p[0] + offset[0] + pageOffX, flipY(p[1] + offset[1])];
       // のりしろ: 外周3辺=CUT、付け根=SCORE

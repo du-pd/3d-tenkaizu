@@ -1,7 +1,7 @@
 // UI 配線: ファイル読込 → 展開 → プレビュー → SVG/DXF 出力。
 import { parseSTL, parseOBJ, weldTriangleSoup, weldPolygons } from './parse.js';
 import { buildTriMesh, mergeCoplanar } from './mesh.js';
-import { buildSpanningTree, unfoldMesh } from './unfold.js';
+import { buildSpanningTree, unfoldMeshAsync } from './unfold.js';
 import { buildLayout } from './layout.js';
 import { toPaperSVG, toLaserSVG, toDXF } from './render.js';
 import { Viewer3D } from './viewer3d.js';
@@ -15,6 +15,9 @@ const state = {
   unfold: null,
   layout: null,
   modelName: 'model',
+  forcedCuts: new Set(),
+  processing: false,
+  pendingUnfold: false,
 };
 
 const viewer = new Viewer3D($('view3d'));
@@ -28,6 +31,27 @@ function log(msg, cls = '') {
   el.scrollTop = el.scrollHeight;
 }
 function clearLog() { $('status').innerHTML = ''; }
+function nextPaint() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(resolve, 0));
+    else setTimeout(resolve, 0);
+  });
+}
+function setProcessing(message = '') {
+  $('processingHint').textContent = message;
+  $('unfoldBtn').disabled = !!message;
+  state.processing = !!message;
+  updateEditMode();
+}
+function updateManualCutSummary() {
+  const n = state.forcedCuts.size;
+  $('manualCutSummary').textContent = n > 0
+    ? `強制カット: ${n} 本（同じ辺をもう一度クリックで解除）`
+    : '強制カット: なし';
+}
+function updateEditMode() {
+  viewer.setInteractive($('editCuts').checked && !!state.mesh && !state.processing);
+}
 
 function paperSize() {
   const p = $('paper').value;
@@ -62,6 +86,8 @@ function modelExtent(mesh) {
 function loadTriangleSoup(tris, name) {
   clearLog();
   state.modelName = name;
+  state.forcedCuts.clear();
+  updateManualCutSummary();
   try {
     const welded = weldTriangleSoup(tris);
     log(`溶接: 生三角形 ${tris.length} → 頂点 ${welded.vertices.length} / 面 ${welded.triangles.length}`, 'ok');
@@ -93,77 +119,115 @@ function finishLoad(welded) {
   else if (nTri > 40000)
     log(`注意: 三角形が多め（${nTri.toLocaleString()}）。展開に数秒かかる場合があります。`, 'warn');
   viewer.setMesh(tri);
-  unfoldNow();
+  requestUnfold();
 }
 
 // --- 展開実行 ---
-function unfoldNow() {
+function requestUnfold() {
+  state.pendingUnfold = true;
+  if (state.processing) return;
+  void unfoldLoop();
+}
+
+async function unfoldLoop() {
+  while (state.pendingUnfold) {
+    state.pendingUnfold = false;
+    await unfoldNow();
+  }
+}
+
+async function unfoldNow() {
   if (!state.triMesh) { log('先にモデルを読み込んでください', 'warn'); return; }
-  const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
-  const mergeDeg = parseFloat($('mergeAngle').value) || 0.1;
-  const merged = mergeCoplanar(state.triMesh, mergeDeg * Math.PI / 180);
-  state.mesh = merged;
-  log(`平面マージ: ${state.triMesh.faces.length} 三角形 → ${merged.faces.length} 面`, 'ok');
+  try {
+    setProcessing('処理準備中…');
+    const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
+    const mergeDeg = parseFloat($('mergeAngle').value) || 0.1;
+    await nextPaint();
+    const merged = mergeCoplanar(state.triMesh, mergeDeg * Math.PI / 180);
+    state.mesh = merged;
+    viewer.setMesh(merged);
+    log(`平面マージ: ${state.triMesh.faces.length} 三角形 → ${merged.faces.length} 面`, 'ok');
 
-  const tree = buildSpanningTree(merged);
-  const unfold = unfoldMesh(merged, tree);
-  state.unfold = unfold;
+    setProcessing('展開木を作成中…');
+    await nextPaint();
+    const tree = buildSpanningTree(merged);
+    setProcessing(`展開中… 面 0/${merged.faces.length}`);
+    const unfold = await unfoldMeshAsync(merged, tree, {
+      forcedCuts: state.forcedCuts,
+      chunkSize: 24,
+      onProgress: ({ placed, total, parts }) => {
+        $('processingHint').textContent = `展開中… 面 ${placed}/${total} / パーツ ${parts}`;
+      },
+    });
+    state.unfold = unfold;
 
-  // スケール（実寸指定）
-  let scale = 1;
-  const targetH = parseFloat($('targetHeight').value);
-  if (targetH > 0) {
-    const ext = modelExtent(merged);
-    const modelH = Math.max(...ext.size);
-    scale = targetH / modelH;
+    let scale = 1;
+    const targetH = parseFloat($('targetHeight').value);
+    if (targetH > 0) {
+      const ext = modelExtent(merged);
+      const modelH = Math.max(...ext.size);
+      scale = targetH / modelH;
+    }
+
+    const page = paperSize();
+    const baseOpts = {
+      tabs: $('useTabs').checked,
+      tabHeight: parseFloat($('tabHeight').value) || 5,
+      clearance: Math.max(0, parseFloat($('clearance').value) || 0),
+      engrave: $('engrave').checked,
+      pageW: page.pageW,
+      pageH: page.pageH,
+    };
+
+    let autofit = false;
+    if ($('autofit').checked) {
+      setProcessing('自動フィット確認中…');
+      await nextPaint();
+      const probe = buildLayout(merged, unfold, { ...baseOpts, scale });
+      let maxW = 0, maxH = 0;
+      for (const pd of probe.parts) { maxW = Math.max(maxW, pd.bbox.w); maxH = Math.max(maxH, pd.bbox.h); }
+      const usableW = page.pageW - 20, usableH = page.pageH - 20;
+      const fit = Math.min(usableW / maxW, usableH / maxH);
+      if (fit < 1) { scale *= fit * 0.98; autofit = true; }
+    }
+
+    setProcessing('レイアウト計算中…');
+    await nextPaint();
+    const layout = buildLayout(merged, unfold, { ...baseOpts, scale });
+    state.layout = layout;
+    state.scale = scale;
+    setPageStyle();
+
+    log(`展開完了: パーツ ${unfold.parts.length} 個 / 折り線 ${unfold.foldEdges.length} / 切り線 ${unfold.cutEdges.length}`, 'ok');
+    if (unfold.parts.length > 1)
+      log(`重なり回避のため ${unfold.parts.length} パーツに分割しました（辺番号で貼り合わせ）`, 'warn');
+    log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
+    if (autofit)
+      log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
+    else if (layout.posterTiles)
+      log(`単一パーツが用紙を超えたため、${layout.pages.length} ページのポスター分割で出力します。貼り合わせ位置はページ順に合わせてください。`, 'warn');
+    else if (layout.overflow)
+      log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
+    if (layout.tabStats && (layout.tabStats.shortened || layout.tabStats.deleted))
+      log(`のりしろ干渉調整: ${layout.tabStats.shortened} 個を短縮 / ${layout.tabStats.deleted} 個を削除`, 'warn');
+    const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
+    log(`処理時間: ${Math.round(t1 - t0)} ms`);
+
+    const ec = new Map();
+    for (const f of unfold.foldEdges) ec.set(f.key, f.mountain ? '#e05555' : '#4477dd');
+    for (const c of unfold.cutEdges) ec.set(c.key, '#22aa44');
+    viewer.setEdgeColors(ec);
+
+    setProcessing('プレビュー更新中…');
+    await nextPaint();
+    renderPreview();
+    updateManualCutSummary();
+  } catch (e) {
+    log('展開エラー: ' + e.message, 'err');
+    console.error(e);
+  } finally {
+    setProcessing('');
   }
-
-  const page = paperSize();
-  const baseOpts = {
-    tabs: $('useTabs').checked,
-    tabHeight: parseFloat($('tabHeight').value) || 5,
-    clearance: Math.max(0, parseFloat($('clearance').value) || 0),
-    engrave: $('engrave').checked,
-    pageW: page.pageW,
-    pageH: page.pageH,
-  };
-
-  // 用紙自動フィット: 最大パーツが用紙内に収まるよう縮小（実寸ではなくなる旨は警告）
-  let autofit = false;
-  if ($('autofit').checked) {
-    const probe = buildLayout(merged, unfold, { ...baseOpts, scale });
-    let maxW = 0, maxH = 0;
-    for (const pd of probe.parts) { maxW = Math.max(maxW, pd.bbox.w); maxH = Math.max(maxH, pd.bbox.h); }
-    const usableW = page.pageW - 20, usableH = page.pageH - 20;
-    const fit = Math.min(usableW / maxW, usableH / maxH);
-    if (fit < 1) { scale *= fit * 0.98; autofit = true; }
-  }
-
-  const layout = buildLayout(merged, unfold, { ...baseOpts, scale });
-  state.layout = layout;
-  state.scale = scale;
-  setPageStyle(); // 印刷用紙サイズを現在の用紙に合わせる
-
-  log(`展開完了: パーツ ${unfold.parts.length} 個 / 折り線 ${unfold.foldEdges.length} / 切り線 ${unfold.cutEdges.length}`, 'ok');
-  if (unfold.parts.length > 1)
-    log(`重なり回避のため ${unfold.parts.length} パーツに分割しました（辺番号で貼り合わせ）`, 'warn');
-  log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
-  if (autofit)
-    log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
-  else if (layout.overflow)
-    log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
-  if (layout.tabStats && (layout.tabStats.shortened || layout.tabStats.deleted))
-    log(`のりしろ干渉調整: ${layout.tabStats.shortened} 個を短縮 / ${layout.tabStats.deleted} 個を削除`, 'warn');
-  const t1 = (typeof performance !== 'undefined' ? performance : Date).now();
-  log(`処理時間: ${Math.round(t1 - t0)} ms`);
-
-  // 3Dビューの辺色分け（折り=緑, 切り=赤）
-  const ec = new Map();
-  for (const f of unfold.foldEdges) ec.set(f.key, f.mountain ? '#e05555' : '#4477dd');
-  for (const c of unfold.cutEdges) ec.set(c.key, '#22aa44');
-  viewer.setEdgeColors(ec);
-
-  renderPreview();
 }
 
 // 折り線の破線設定（レーザーSVG / DXF に適用）
@@ -257,6 +321,8 @@ $('file').addEventListener('change', async (e) => {
       const { vertices, faces } = parseOBJ(text);
       clearLog();
       state.modelName = name;
+      state.forcedCuts.clear();
+      updateManualCutSummary();
       const welded = weldPolygons(vertices, faces);
       log(`OBJ読込: 頂点 ${vertices.length} / 面 ${faces.length}`, 'ok');
       finishLoad(welded);
@@ -280,19 +346,19 @@ document.querySelectorAll('[data-sample]').forEach((btn) => {
   });
 });
 
-$('unfoldBtn').addEventListener('click', unfoldNow);
+$('unfoldBtn').addEventListener('click', requestUnfold);
 $('dlSvg').addEventListener('click', downloadSVG);
 $('dlDxf').addEventListener('click', downloadDXF);
 $('printBtn').addEventListener('click', () => { setPageStyle(); window.print(); });
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', renderPreview));
 ['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
-  $(id).addEventListener('change', () => { if (state.triMesh) unfoldNow(); }));
+  $(id).addEventListener('change', () => { if (state.triMesh) requestUnfold(); }));
 
 // 用紙サイズ切替: カスタム時のみW×H入力を表示
 $('paper').addEventListener('change', () => {
   $('customSize').hidden = $('paper').value !== 'custom';
-  if (state.triMesh) unfoldNow();
+  if (state.triMesh) requestUnfold();
 });
 
 // 折り線の破線設定はレンダリングのみに影響（再展開は不要）
@@ -303,6 +369,40 @@ $('paper').addEventListener('change', () => {
     $('distinguishRow').hidden = !dashed;
     renderPreview();
   }));
+
+$('editCuts').addEventListener('change', updateEditMode);
+$('clearCuts').addEventListener('click', () => {
+  if (state.forcedCuts.size === 0) return;
+  state.forcedCuts.clear();
+  updateManualCutSummary();
+  log('強制カットをクリアしました。', 'plain');
+  requestUnfold();
+});
+
+viewer.setEdgePicker((key) => {
+  if (!$('editCuts').checked || state.processing || !state.mesh) return;
+  const edge = state.mesh.edgeMap.get(key);
+  if (!edge || edge.faces.length !== 2) {
+    log('境界辺は手動カットの対象外です。', 'plain');
+    return;
+  }
+  if (state.forcedCuts.has(key)) {
+    state.forcedCuts.delete(key);
+    updateManualCutSummary();
+    log(`強制カット解除: 辺 ${key}`, 'plain');
+    requestUnfold();
+    return;
+  }
+  const isFold = !!state.unfold?.foldEdges.find((e) => e.key === key);
+  if (!isFold) {
+    log(`辺 ${key} は既に切り線です。`, 'plain');
+    return;
+  }
+  state.forcedCuts.add(key);
+  updateManualCutSummary();
+  log(`強制カット追加: 辺 ${key}`, 'plain');
+  requestUnfold();
+});
 
 // 初期表示: 立方体
 loadTriangleSoup(cube(40), 'cube');
