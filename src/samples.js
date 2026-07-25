@@ -78,3 +78,26 @@ export function dodecahedron(size = 20) {
   for (const f of faces) pushFace(tris, [0, 0, 0], f.map((i) => v[i]));
   return tris;
 }
+
+// 八面体を細分した球状メッシュ（曲面＝展開時に重なりが出る検証用）。
+// subdiv を上げると面数が増え、自動カット(cutTreeEdges)が発生する。
+export function sphere(r = 25, subdiv = 2) {
+  const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  let faces = [
+    [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [[0, 1, 0], [-1, 0, 0], [0, 0, 1]],
+    [[-1, 0, 0], [0, -1, 0], [0, 0, 1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+    [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[-1, 0, 0], [0, 1, 0], [0, 0, -1]],
+    [[0, -1, 0], [-1, 0, 0], [0, 0, -1]], [[1, 0, 0], [0, -1, 0], [0, 0, -1]],
+  ];
+  for (let s = 0; s < subdiv; s++) {
+    const nf = [];
+    for (const [a, b, c] of faces) {
+      const ab = nrm([a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
+      const bc = nrm([b[0] + c[0], b[1] + c[1], b[2] + c[2]]);
+      const ca = nrm([c[0] + a[0], c[1] + a[1], c[2] + a[2]]);
+      nf.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
+    }
+    faces = nf;
+  }
+  return faces.map((f) => f.map((v) => [v[0] * r, v[1] * r, v[2] * r]));
+}

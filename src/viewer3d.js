@@ -125,7 +125,13 @@ export class Viewer3D {
       const p = projs[edge.a], q = projs[edge.b];
       const distSq = pointSegDistSq(x, y, p, q);
       if (distSq > thresholdSq) continue;
-      if (!best || distSq < best.distSq) best = { key, distSq };
+      // オクルージョン対策: クリック近傍のうち「最も手前(depth大)」の辺を選ぶ。
+      // 投影のzは大きいほど手前（draw()も同順で上に重ねている）。裏側の辺を拾いにくい。
+      const depth = (p[2] + q[2]) / 2;
+      if (!best || depth > best.depth + 1e-6 ||
+          (Math.abs(depth - best.depth) <= 1e-6 && distSq < best.distSq)) {
+        best = { key, distSq, depth };
+      }
     }
     return best;
   }

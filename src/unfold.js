@@ -78,137 +78,38 @@ export function buildSpanningTree(mesh) {
   return { dualEdges, treeEdges, adj };
 }
 
-// 木をたどって2D展開。重なりが出たら枝を切って新パーツにする。
-// 戻り値: { parts, foldEdges, cutEdges }
-export function unfoldMesh(mesh, tree, options = {}) {
-  const { vertices, faces } = mesh;
-  const { adj, treeEdges } = tree;
-  const forcedCuts = options.forcedCuts ?? new Set();
-  const intrinsic = faces.map((f) => intrinsicCoords(vertices, f));
-
-  // 展開結果: 面ごとの2D座標（グローバル座標）
-  const placed = new Array(faces.length).fill(null); // [ [x,y]* ] 面頂点順
-  const facePart = new Array(faces.length).fill(-1);
-  const parts = []; // { faces:[fi...], polys: Map fi->coords }
-  const usedTreeEdge = new Set(); // 実際にフォールドとして使った辺 key
-  const cutTreeEdges = []; // 重なりで切った木辺
-
-  // ルート集合（森）を巡る。全面を訪問するまでBFS。
-  const visited = new Array(faces.length).fill(false);
-
-  for (let root = 0; root < faces.length; root++) {
-    if (visited[root]) continue;
-    // 新パーツ開始
-    const part = { faces: [], index: parts.length };
-    parts.push(part);
-    placeRoot(root, part);
-
-    const queue = [root];
-    visited[root] = true;
-    while (queue.length) {
-      const cur = queue.shift();
-      for (const { to, edge } of adj.get(cur)) {
-        if (visited[to]) continue;
-        if (forcedCuts.has(edge.key)) {
-          cutTreeEdges.push(edge);
-          continue;
-        }
-        // cur は配置済み。to を cur の隣に展開してみる。
-        const coords = placeChild(cur, to, edge);
-        if (coords === null) {
-          continue; // 木辺だが向きが取れない稀ケース。後続でルート化される。
-        }
-        if (overlaps(coords, to, part)) {
-          // 重なり → この枝を切る（別パーツのルートにする）
-          cutTreeEdges.push(edge);
-          continue;
-        }
-        placed[to] = coords;
-        facePart[to] = part.index;
-        part.faces.push(to);
-        usedTreeEdge.add(edge.key);
-        visited[to] = true;
-        queue.push(to);
-      }
-    }
-  }
-
-  function placeRoot(fi, part) {
-    // ルートは intrinsic 座標をそのまま採用（後でパッキング時に平行移動）
-    placed[fi] = intrinsic[fi].map((p) => p.slice());
-    facePart[fi] = part.index;
-    part.faces.push(fi);
-  }
-
-  // 親 pf（配置済み）に対して子 cf を共有辺で展開した2D座標を返す
-  function placeChild(pf, cf, edge) {
-    const ea = edge.ea,
-      eb = edge.eb;
-    // 親側の共有辺2D座標
-    const pIa = faces[pf].verts.indexOf(ea);
-    const pIb = faces[pf].verts.indexOf(eb);
-    if (pIa < 0 || pIb < 0) return null;
-    const A = placed[pf][pIa];
-    const B = placed[pf][pIb];
-
-    // 子側 intrinsic の共有辺
-    const cIa = faces[cf].verts.indexOf(ea);
-    const cIb = faces[cf].verts.indexOf(eb);
-    if (cIa < 0 || cIb < 0) return null;
-    const sA = intrinsic[cf][cIa];
-    const sB = intrinsic[cf][cIb];
-
-    // 子 intrinsic を、辺 sA->sB が A->B に一致する剛体変換で写す
-    const mapped = mapEdge(intrinsic[cf], sA, sB, A, B, +1);
-
-    // 親の重心が辺 A-B のどちら側かを見て、子を反対側に来るよう反転
-    const pc = centroid(placed[pf]);
-    const cc = centroid(mapped);
-    const nrm = perp2(normalize2(sub2(B, A))); // 辺の法線
-    const ps = Math.sign(dot2(sub2(pc, A), nrm));
-    const cs = Math.sign(dot2(sub2(cc, A), nrm));
-    if (ps === cs && ps !== 0) {
-      // 同じ側 → 反転して反対側へ
-      return mapEdge(intrinsic[cf], sA, sB, A, B, -1);
-    }
-    return mapped;
-  }
-
-  return finalizeUnfold(mesh, tree, {
-    placed, facePart, parts, usedTreeEdge, cutTreeEdges,
-  });
-
-  // --- 内部ヘルパ ---
-  function overlaps(coords, cf, part) {
-    for (const other of part.faces) {
-      if (other === cf) continue;
-      if (polyOverlap(coords, placed[other])) return true;
-    }
-    return false;
-  }
-}
-
-export async function unfoldMeshAsync(mesh, tree, options = {}) {
+// 共通の展開ジェネレータ。木をたどって2D展開し、重なりが出たら枝を切る。
+// 進捗を yield し、最後に finalizeUnfold の結果を return する。
+// 同期版(unfoldMesh)と非同期版(unfoldMeshAsync)の両方から使い、ロジック重複を避ける。
+//
+// options:
+//   forcedCuts  : Set<edgeKey> 強制的に切り線にする木辺
+//   forcedFolds : Set<edgeKey> 重なりで自動カットされる木辺を強制的に折り線に戻す(=繋ぐ)
+//   chunkSize   : number 何面配置ごとに yield するか（同期版は Infinity で実質 yield しない）
+function* unfoldGenerator(mesh, tree, options = {}) {
   const { vertices, faces } = mesh;
   const { adj } = tree;
   const forcedCuts = options.forcedCuts ?? new Set();
+  const forcedFolds = options.forcedFolds ?? new Set();
+  const chunkSize = options.chunkSize;
   const intrinsic = faces.map((f) => intrinsicCoords(vertices, f));
-  const chunkSize = Math.max(1, options.chunkSize ?? 24);
-  const placed = new Array(faces.length).fill(null);
+
+  const placed = new Array(faces.length).fill(null); // 面ごとの2D座標（頂点順）
   const facePart = new Array(faces.length).fill(-1);
   const parts = [];
-  const usedTreeEdge = new Set();
-  const cutTreeEdges = [];
+  const usedTreeEdge = new Set(); // 折り線として使った辺
+  const cutTreeEdges = [];        // 重なりで切った木辺（=繋ぎ直せる候補）
+  const forcedOverlaps = [];      // forcedFold で重なりを承知で折り線にした辺
   const visited = new Array(faces.length).fill(false);
-  let ops = 0;
-  let placedCount = 0;
+  let ops = 0, placedCount = 0;
+  const progress = () => ({ placed: placedCount, total: faces.length, parts: parts.length });
 
   for (let root = 0; root < faces.length; root++) {
     if (visited[root]) continue;
     const part = { faces: [], index: parts.length };
     parts.push(part);
     placeRoot(root, part);
-    reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
+    yield progress();
 
     const queue = [root];
     visited[root] = true;
@@ -216,15 +117,14 @@ export async function unfoldMeshAsync(mesh, tree, options = {}) {
       const cur = queue.shift();
       for (const { to, edge } of adj.get(cur)) {
         if (visited[to]) continue;
-        if (forcedCuts.has(edge.key)) {
-          cutTreeEdges.push(edge);
-          continue;
-        }
+        if (forcedCuts.has(edge.key)) { cutTreeEdges.push(edge); continue; }
+        // cur は配置済み。to を cur の隣に展開してみる。
         const coords = placeChild(cur, to, edge);
-        if (coords === null) continue;
+        if (coords === null) continue; // 向きが取れない稀ケース → 後続でルート化
         if (overlaps(coords, to, part)) {
-          cutTreeEdges.push(edge);
-          continue;
+          // 通常は重なり → 枝を切る。ただし forcedFold なら承知で折り線に固定。
+          if (forcedFolds.has(edge.key)) forcedOverlaps.push(edge);
+          else { cutTreeEdges.push(edge); continue; }
         }
         placed[to] = coords;
         facePart[to] = part.index;
@@ -233,27 +133,24 @@ export async function unfoldMeshAsync(mesh, tree, options = {}) {
         visited[to] = true;
         placedCount++;
         queue.push(to);
-        ops++;
-        if (ops % chunkSize === 0) {
-          reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
-          await yieldControl();
-        }
+        if (Number.isFinite(chunkSize) && ++ops % chunkSize === 0) yield progress();
       }
     }
   }
 
-  reportProgress(options, 'unfold', { placed: placedCount, total: faces.length, parts: parts.length });
-  return finalizeUnfold(mesh, tree, {
-    placed, facePart, parts, usedTreeEdge, cutTreeEdges,
-  });
+  yield progress();
+  const result = finalizeUnfold(mesh, tree, { placed, facePart, parts, usedTreeEdge, cutTreeEdges });
+  result.forcedOverlaps = forcedOverlaps;
+  return result;
 
   function placeRoot(fi, part) {
-    placed[fi] = intrinsic[fi].map((p) => p.slice());
+    placed[fi] = intrinsic[fi].map((p) => p.slice()); // ルートは intrinsic そのまま
     facePart[fi] = part.index;
     part.faces.push(fi);
     placedCount++;
   }
 
+  // 親 pf（配置済み）に対して子 cf を共有辺で展開した2D座標を返す
   function placeChild(pf, cf, edge) {
     const ea = edge.ea, eb = edge.eb;
     const pIa = faces[pf].verts.indexOf(ea);
@@ -268,7 +165,9 @@ export async function unfoldMeshAsync(mesh, tree, options = {}) {
     const sA = intrinsic[cf][cIa];
     const sB = intrinsic[cf][cIb];
 
+    // 子 intrinsic を、辺 sA->sB が A->B に一致する剛体変換で写す
     const mapped = mapEdge(intrinsic[cf], sA, sB, A, B, +1);
+    // 親の重心が辺 A-B のどちら側かを見て、子を反対側へ（反転）
     const pc = centroid(placed[pf]);
     const cc = centroid(mapped);
     const nrm = perp2(normalize2(sub2(B, A)));
@@ -285,6 +184,27 @@ export async function unfoldMeshAsync(mesh, tree, options = {}) {
     }
     return false;
   }
+}
+
+// 同期版: ジェネレータを最後まで回すだけ（yield は無視）。
+export function unfoldMesh(mesh, tree, options = {}) {
+  const gen = unfoldGenerator(mesh, tree, { ...options, chunkSize: Infinity });
+  let r = gen.next();
+  while (!r.done) r = gen.next();
+  return r.value;
+}
+
+// 非同期版: チャンクごとに制御をブラウザへ返し、進捗を通知する。
+export async function unfoldMeshAsync(mesh, tree, options = {}) {
+  const chunkSize = Math.max(1, options.chunkSize ?? 24);
+  const gen = unfoldGenerator(mesh, tree, { ...options, chunkSize });
+  let r = gen.next();
+  while (!r.done) {
+    if (r.value) reportProgress(options, 'unfold', r.value);
+    await yieldControl();
+    r = gen.next();
+  }
+  return r.value;
 }
 
 function centroid(poly) {

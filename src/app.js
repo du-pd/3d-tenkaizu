@@ -16,6 +16,7 @@ const state = {
   layout: null,
   modelName: 'model',
   forcedCuts: new Set(),
+  forcedFolds: new Set(),
   processing: false,
   pendingUnfold: false,
 };
@@ -44,10 +45,10 @@ function setProcessing(message = '') {
   updateEditMode();
 }
 function updateManualCutSummary() {
-  const n = state.forcedCuts.size;
-  $('manualCutSummary').textContent = n > 0
-    ? `強制カット: ${n} 本（同じ辺をもう一度クリックで解除）`
-    : '強制カット: なし';
+  const nc = state.forcedCuts.size, nf = state.forcedFolds.size;
+  $('manualCutSummary').textContent = (nc || nf)
+    ? `強制カット: ${nc} 本 / 強制フォールド(繋ぐ): ${nf} 本（同じ辺をもう一度クリックで解除）`
+    : '手動編集: なし';
 }
 function updateEditMode() {
   viewer.setInteractive($('editCuts').checked && !!state.mesh && !state.processing);
@@ -87,6 +88,7 @@ function loadTriangleSoup(tris, name) {
   clearLog();
   state.modelName = name;
   state.forcedCuts.clear();
+  state.forcedFolds.clear();
   updateManualCutSummary();
   try {
     const welded = weldTriangleSoup(tris);
@@ -154,12 +156,15 @@ async function unfoldNow() {
     setProcessing(`展開中… 面 0/${merged.faces.length}`);
     const unfold = await unfoldMeshAsync(merged, tree, {
       forcedCuts: state.forcedCuts,
+      forcedFolds: state.forcedFolds,
       chunkSize: 24,
       onProgress: ({ placed, total, parts }) => {
         $('processingHint').textContent = `展開中… 面 ${placed}/${total} / パーツ ${parts}`;
       },
     });
     state.unfold = unfold;
+    // 繋いだ結果が実際に効いたか（forcedFold指定のうち適用された辺）を反映
+    state.forcedFolds = new Set([...state.forcedFolds].filter((k) => unfold.foldEdges.some((e) => e.key === k)));
 
     let scale = 1;
     const targetH = parseFloat($('targetHeight').value);
@@ -202,6 +207,8 @@ async function unfoldNow() {
     log(`展開完了: パーツ ${unfold.parts.length} 個 / 折り線 ${unfold.foldEdges.length} / 切り線 ${unfold.cutEdges.length}`, 'ok');
     if (unfold.parts.length > 1)
       log(`重なり回避のため ${unfold.parts.length} パーツに分割しました（辺番号で貼り合わせ）`, 'warn');
+    if (unfold.forcedOverlaps && unfold.forcedOverlaps.length)
+      log(`注意: 手動で繋いだ ${unfold.forcedOverlaps.length} 本の折り線で展開図に重なりが生じています（ユーザー指定）。`, 'warn');
     log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
     if (autofit)
       log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
@@ -325,6 +332,7 @@ $('file').addEventListener('change', async (e) => {
       clearLog();
       state.modelName = name;
       state.forcedCuts.clear();
+      state.forcedFolds.clear();
       updateManualCutSummary();
       const welded = weldPolygons(vertices, faces);
       log(`OBJ読込: 頂点 ${vertices.length} / 面 ${faces.length}`, 'ok');
@@ -375,36 +383,45 @@ $('paper').addEventListener('change', () => {
 
 $('editCuts').addEventListener('change', updateEditMode);
 $('clearCuts').addEventListener('click', () => {
-  if (state.forcedCuts.size === 0) return;
+  if (state.forcedCuts.size === 0 && state.forcedFolds.size === 0) return;
   state.forcedCuts.clear();
+  state.forcedFolds.clear();
   updateManualCutSummary();
-  log('強制カットをクリアしました。', 'plain');
+  log('手動編集（強制カット／フォールド）をクリアしました。', 'plain');
   requestUnfold();
 });
 
+// 辺クリックのスマートトグル:
+//  折り線 → 切り線に固定 / 自動カット(重なり由来) → 折り線に固定(繋ぐ) / 強制指定 → 解除
 viewer.setEdgePicker((key) => {
   if (!$('editCuts').checked || state.processing || !state.mesh) return;
   const edge = state.mesh.edgeMap.get(key);
-  if (!edge || edge.faces.length !== 2) {
-    log('境界辺は手動カットの対象外です。', 'plain');
-    return;
-  }
+  if (!edge || edge.faces.length !== 2) { log('境界辺は編集対象外です。', 'plain'); return; }
+
+  // 1) すでに手動指定していれば解除（トグルオフ）
   if (state.forcedCuts.has(key)) {
     state.forcedCuts.delete(key);
-    updateManualCutSummary();
-    log(`強制カット解除: 辺 ${key}`, 'plain');
-    requestUnfold();
-    return;
+    updateManualCutSummary(); log(`強制カット解除: 辺 ${key}`, 'plain'); requestUnfold(); return;
   }
-  const isFold = !!state.unfold?.foldEdges.find((e) => e.key === key);
-  if (!isFold) {
-    log(`辺 ${key} は既に切り線です。`, 'plain');
-    return;
+  if (state.forcedFolds.has(key)) {
+    state.forcedFolds.delete(key);
+    updateManualCutSummary(); log(`強制フォールド解除: 辺 ${key}`, 'plain'); requestUnfold(); return;
   }
-  state.forcedCuts.add(key);
-  updateManualCutSummary();
-  log(`強制カット追加: 辺 ${key}`, 'plain');
-  requestUnfold();
+
+  // 2) 現在の状態から切る/繋ぐを決める
+  const u = state.unfold;
+  if (u?.foldEdges.some((e) => e.key === key)) {
+    // 折り線 → 切り線へ固定
+    state.forcedCuts.add(key);
+    updateManualCutSummary(); log(`切り線に固定: 辺 ${key}`, 'plain'); requestUnfold(); return;
+  }
+  if (u?.cutTreeEdges?.some((e) => e.key === key)) {
+    // 重なり回避で自動カットされた木辺 → 折り線に繋ぎ直す（重なりが出る場合あり）
+    state.forcedFolds.add(key);
+    updateManualCutSummary(); log(`折り線に固定（繋ぐ）: 辺 ${key}`, 'plain'); requestUnfold(); return;
+  }
+  // 3) 別経路で接続済みの切り線（=非木の合わせ目）は折り線にできない
+  log(`辺 ${key} は別経路で接続済みのため折り線にできません（合わせ目）。`, 'plain');
 });
 
 // 初期表示: 立方体

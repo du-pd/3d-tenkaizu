@@ -217,11 +217,11 @@
       <div class="btnrow"><button id="unfoldBtn" class="block">展開する</button></div>
       <div class="statusline" id="processingHint" aria-live="polite"></div>
       <fieldset>
-        <legend>手動カット</legend>
-        <div class="row"><input type="checkbox" id="editCuts"><label for="editCuts">3Dプレビューで辺をクリックして切り線に固定</label></div>
-        <div class="hint">折り線をクリックするとその辺を強制的に切り線へ変更して再展開します。境界辺や既に切り線の辺は変更されません。</div>
-        <div class="hint" id="manualCutSummary">強制カット: なし</div>
-        <div class="btnrow"><button id="clearCuts" type="button" class="ghost block">強制カットをクリア</button></div>
+        <legend>手動編集（切る／繋ぐ）</legend>
+        <div class="row"><input type="checkbox" id="editCuts"><label for="editCuts">3Dプレビューで辺をクリックして編集</label></div>
+        <div class="hint">辺をクリックすると状態に応じてトグルします: <strong>折り線→切り線に固定</strong> / <strong>自動で切れた辺→折り線に繋ぐ</strong> / もう一度クリックで<strong>解除</strong>。（繋ぐと展開図が重なる場合があります。境界辺・別経路の合わせ目は対象外。）</div>
+        <div class="hint" id="manualCutSummary">手動編集: なし</div>
+        <div class="btnrow"><button id="clearCuts" type="button" class="ghost block">手動編集をクリア</button></div>
       </fieldset>
     </div>
 

@@ -3,7 +3,7 @@ import { weldTriangleSoup } from '../src/parse.js';
 import { buildTriMesh, mergeCoplanar } from '../src/mesh.js';
 import { buildSpanningTree, unfoldMesh, unfoldMeshAsync } from '../src/unfold.js';
 import { len2, sub2 } from '../src/vec.js';
-import { cube, tetrahedron, octahedron, dodecahedron } from './shapes.js';
+import { cube, tetrahedron, octahedron, dodecahedron, sphere } from './shapes.js';
 
 let pass = 0, fail = 0;
 function check(name, cond, extra = '') {
@@ -88,6 +88,26 @@ await checkAsyncMatches('正四面体 (tetra)', tetraRes.merged, tetraRes.tree, 
     `${forcedRes.parts.length} vs ${cubeRes.res.parts.length}`);
   check('強制カット辺が折り線から外れる', !forcedRes.foldEdges.some((e) => e.key === forcedKey));
   check('強制カット辺が切り線になる', forcedRes.cutEdges.some((e) => e.key === forcedKey));
+}
+
+// forcedFolds(繋ぐ): 重なりで自動カットされた木辺を強制的に折り線へ戻せる
+{
+  console.log('\n== forcedFolds(繋ぐ) ==');
+  const w = weldTriangleSoup(sphere(20, 4));
+  const m = mergeCoplanar(buildTriMesh(w.vertices, w.triangles));
+  const tree = buildSpanningTree(m);
+  const base = unfoldMesh(m, tree);
+  check('球面で重なり由来の自動カット(cutTreeEdges)が発生', base.cutTreeEdges.length > 0, `${base.cutTreeEdges.length}`);
+  const k = base.cutTreeEdges[0].key;
+  check('その辺は当初は折り線でない', !base.foldEdges.some((e) => e.key === k));
+  const rec = unfoldMesh(m, tree, { forcedFolds: new Set([k]) });
+  check('forcedFoldでその辺が折り線になる（繋ぐ）', rec.foldEdges.some((e) => e.key === k));
+  check('繋いだ辺は forcedOverlaps に記録される', rec.forcedOverlaps.some((e) => e.key === k));
+  const both = unfoldMesh(m, tree, { forcedCuts: new Set([k]), forcedFolds: new Set([k]) });
+  check('forcedCutとforcedFold同時指定はcut優先（安全側）', !both.foldEdges.some((e) => e.key === k));
+  // 非同期版でも forcedFolds が効く
+  const recA = await unfoldMeshAsync(m, tree, { forcedFolds: new Set([k]), chunkSize: 64 });
+  check('非同期版でも繋ぐが効く', recA.foldEdges.some((e) => e.key === k));
 }
 
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
