@@ -57,14 +57,17 @@ await page.goto('http://localhost:8123/index.html', { waitUntil: 'networkidle' }
 await waitForIdle();
 
 // 初期ロードで立方体が展開されているはず
-const status = await page.$eval('#status', (el) => el.innerText);
+const status = await page.$eval('#status', (el) => el.textContent);
 console.log('--- 初期ステータス(cube) ---\n' + status);
+const currentModel = await page.textContent('#currentModel');
+if (!currentModel.includes('立方体')) errors.push('initial model indicator is missing');
+if (await page.isDisabled('#dlSvg')) errors.push('SVG output should be enabled after initial unfold');
 
 // 各サンプルで展開してエラーが出ないか
 for (const s of ['dodeca', 'cube']) {
   await page.click(`[data-sample="${s}"]`);
   await waitForIdle();
-  const st = await page.$eval('#status', (el) => el.innerText);
+  const st = await page.$eval('#status', (el) => el.textContent);
   const parts = (st.match(/パーツ (\d+) 個/) || [])[1];
   const svgCount = await page.$$eval('#preview .page svg', (els) => els.length);
   console.log(`${s}: parts=${parts}, previewSVG=${svgCount}`);
@@ -72,7 +75,10 @@ for (const s of ['dodeca', 'cube']) {
 
 // レーザーモードに切替→SVGにCUT/SCOREレイヤーがあるか
 await page.click('input[name="mode"][value="laser"]');
-await page.waitForTimeout(200);
+await waitForIdle();
+const paperSettingsHidden = await page.$eval('[data-mode-section="paper"]', (el) => el.hidden);
+const laserSettingsVisible = await page.$eval('[data-mode-section="laser"]', (el) => !el.hidden);
+if (!paperSettingsHidden || !laserSettingsVisible) errors.push('mode-specific settings did not switch to laser');
 const svgHTML = await page.$eval('#preview .page svg', (el) => el.outerHTML);
 console.log('laser svg has CUT layer:', /id="cut"/.test(svgHTML));
 console.log('laser svg has SCORE layer:', /id="score"/.test(svgHTML));
@@ -82,23 +88,27 @@ console.log('laser svg mm units:', /mm"/.test(svgHTML));
 await page.fill('#targetHeight', '150');
 await page.dispatchEvent('#targetHeight', 'change');
 await waitForIdle();
-const st2 = await page.$eval('#status', (el) => el.innerText);
+const st2 = await page.$eval('#status', (el) => el.textContent);
 console.log('scale applied:', /スケール ×/.test(st2));
 
 // 大きな単一パーツはポスター分割、さらに自動フィットでも解消できる
 await page.click('input[name="mode"][value="paper"]');
+await waitForIdle();
+const laserSettingsHidden = await page.$eval('[data-mode-section="laser"]', (el) => el.hidden);
+if (!laserSettingsHidden) errors.push('laser settings remain visible in paper mode');
 await page.fill('#targetHeight', '0');
 await page.click('[data-sample="dodeca"]');
 await page.fill('#targetHeight', '300');
 await page.dispatchEvent('#targetHeight', 'change');
 await waitForIdle();
-const st3 = await page.$eval('#status', (el) => el.innerText);
+const st3 = await page.$eval('#status', (el) => el.textContent);
 const tiledPages = await page.$$eval('#preview .page', (els) => els.length);
 console.log('poster tiling warned:', /ポスター分割/.test(st3), 'pages:', tiledPages);
 if (!/ポスター分割/.test(st3) || tiledPages < 2) errors.push(`poster tiling not applied: warned=${/ポスター分割/.test(st3)} pages=${tiledPages}`);
+await page.$eval('#advancedSettings', (el) => { el.open = true; });
 await page.click('#autofit');
 await waitForIdle();
-const st4 = await page.$eval('#status', (el) => el.innerText);
+const st4 = await page.$eval('#status', (el) => el.textContent);
 console.log('autofit applied:', /自動フィット/.test(st4));
 if (!/自動フィット/.test(st4)) errors.push('autofit message missing after enabling autofit');
 
@@ -118,9 +128,20 @@ console.log('custom fields hidden on A4:', custHidden);
 // スマホ幅で3Dプレビュー(canvas)の高さが0にならないこと(#4)
 await page.setViewportSize({ width: 390, height: 844 });
 await page.waitForTimeout(300);
+const visiblePanelsAtStart = await page.$$eval('[data-mobile-panel]', (els) => els.filter((el) => !el.hidden).map((el) => el.id));
+if (visiblePanelsAtStart.length !== 1 || visiblePanelsAtStart[0] !== 'settingsPanel') {
+  errors.push('mobile settings tab does not show exactly one panel');
+}
+await page.focus('#tabSettings');
+await page.keyboard.press('ArrowRight');
+const selectedTabAfterKey = await page.getAttribute('#tab3d', 'aria-selected');
+if (selectedTabAfterKey !== 'true') errors.push('mobile tabs do not respond to arrow keys');
 const canvasH = await page.$eval('#view3d', (c) => c.getBoundingClientRect().height);
 console.log('mobile canvas height:', Math.round(canvasH), canvasH > 50 ? 'ok' : 'FAIL');
 if (canvasH <= 50) errors.push('mobile canvas height collapsed: ' + canvasH);
+await page.click('#tab2d');
+const panel2dVisible = await page.$eval('#panel2d', (el) => !el.hidden);
+if (!panel2dVisible) errors.push('mobile preview tab did not activate');
 await page.setViewportSize({ width: 1400, height: 900 });
 
 // 複数ページ印刷: プレビューのページ数と印刷PDFのシート数が一致すること

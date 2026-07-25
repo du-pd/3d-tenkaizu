@@ -19,6 +19,8 @@ const state = {
   forcedFolds: new Set(),
   processing: false,
   pendingUnfold: false,
+  modelLabel: 'サンプル：立方体',
+  lastAlert: null,
 };
 
 const viewer = new Viewer3D($('view3d'));
@@ -30,8 +32,32 @@ function log(msg, cls = '') {
   div.textContent = msg;
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
+  if (cls === 'err' || cls === 'warn') {
+    state.lastAlert = { msg, cls };
+    const summary = $('resultSummary');
+    summary.textContent = msg;
+    summary.className = `result-summary ${cls}`;
+  }
 }
-function clearLog() { $('status').innerHTML = ''; }
+function clearLog() {
+  $('status').innerHTML = '';
+  state.lastAlert = null;
+}
+function updateOutputState() {
+  const ready = !!state.layout && !state.processing;
+  $('dlSvg').disabled = !ready;
+  $('printBtn').disabled = !ready;
+  $('dlDxf').disabled = !ready;
+  $('mobilePrint').disabled = !ready;
+  $('mobilePrimary').textContent = ready ? 'SVGを書き出す' : '展開図を作成';
+}
+function setCurrentModel(label, sample = '') {
+  state.modelLabel = label;
+  $('currentModel').textContent = label;
+  document.querySelectorAll('[data-sample]').forEach((btn) => {
+    btn.setAttribute('aria-pressed', String(btn.dataset.sample === sample));
+  });
+}
 function nextPaint() {
   return new Promise((resolve) => {
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(resolve, 0));
@@ -43,6 +69,7 @@ function setProcessing(message = '') {
   $('unfoldBtn').disabled = !!message;
   state.processing = !!message;
   updateEditMode();
+  updateOutputState();
 }
 function updateManualCutSummary() {
   const nc = state.forcedCuts.size, nf = state.forcedFolds.size;
@@ -86,6 +113,8 @@ function modelExtent(mesh) {
 // --- 読み込み共通処理 ---
 function loadTriangleSoup(tris, name) {
   clearLog();
+  state.layout = null;
+  updateOutputState();
   state.modelName = name;
   state.forcedCuts.clear();
   state.forcedFolds.clear();
@@ -141,6 +170,9 @@ async function unfoldLoop() {
 async function unfoldNow() {
   if (!state.triMesh) { log('先にモデルを読み込んでください', 'warn'); return; }
   try {
+    state.lastAlert = null;
+    $('resultSummary').textContent = '展開図を作成しています…';
+    $('resultSummary').className = 'result-summary';
     setProcessing('処理準備中…');
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
     const mergeDeg = parseFloat($('mergeAngle').value) || 0.1;
@@ -175,8 +207,9 @@ async function unfoldNow() {
     }
 
     const page = paperSize();
+    const mode = document.querySelector('input[name="mode"]:checked').value;
     const baseOpts = {
-      tabs: $('useTabs').checked,
+      tabs: mode === 'paper' && $('useTabs').checked,
       tabHeight: parseFloat($('tabHeight').value) || 5,
       clearance: Math.max(0, parseFloat($('clearance').value) || 0),
       engrave: $('engrave').checked,
@@ -232,6 +265,14 @@ async function unfoldNow() {
     await nextPaint();
     renderPreview();
     updateManualCutSummary();
+    const paperName = $('paper').selectedOptions[0].textContent.split('（')[0];
+    if (state.lastAlert) {
+      $('resultSummary').textContent = state.lastAlert.msg;
+      $('resultSummary').className = `result-summary ${state.lastAlert.cls}`;
+    } else {
+      $('resultSummary').textContent = `展開完了・${paperName}・${layout.pages.length}ページ`;
+      $('resultSummary').className = 'result-summary ok';
+    }
   } catch (e) {
     log('展開エラー: ' + e.message, 'err');
     console.error(e);
@@ -256,7 +297,7 @@ function currentSVGs() {
   if (mode === 'laser') {
     return toLaserSVG(state.layout, { engrave: $('engrave').checked, dash: dashOpts() });
   }
-  return toPaperSVG(state.layout, { numbers: true });
+  return toPaperSVG(state.layout, { numbers: $('paperNumbers').checked });
 }
 
 // 2Dプレビューの凡例を出力モードに合わせて切り替える（#7）
@@ -325,6 +366,7 @@ $('file').addEventListener('change', async (e) => {
   if (!file) return;
   const name = file.name.replace(/\.[^.]+$/, '');
   const lower = file.name.toLowerCase();
+  setCurrentModel(`ファイル：${file.name}`);
   try {
     if (lower.endsWith('.obj')) {
       const text = await file.text();
@@ -353,6 +395,9 @@ const samples = { cube, tetra: tetrahedron, octa: octahedron, dodeca: dodecahedr
 document.querySelectorAll('[data-sample]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const gen = samples[btn.dataset.sample];
+    const label = btn.dataset.sample === 'cube' ? 'サンプル：立方体' : 'サンプル：正十二面体';
+    setCurrentModel(`${label}を使用中`, btn.dataset.sample);
+    $('file').value = '';
     loadTriangleSoup(gen(40), btn.dataset.sample);
   });
 });
@@ -361,8 +406,17 @@ $('unfoldBtn').addEventListener('click', requestUnfold);
 $('dlSvg').addEventListener('click', downloadSVG);
 $('dlDxf').addEventListener('click', downloadDXF);
 $('printBtn').addEventListener('click', () => { setPageStyle(); window.print(); });
+function updateModeUI() {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  document.querySelectorAll('[data-mode-section]').forEach((section) => {
+    section.hidden = section.dataset.modeSection !== mode;
+  });
+  $('dlDxf').hidden = mode !== 'laser';
+  if (state.triMesh) requestUnfold();
+  else renderPreview();
+}
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
-  r.addEventListener('change', renderPreview));
+  r.addEventListener('change', updateModeUI));
 ['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH', 'posterOverlap'].forEach((id) =>
   $(id).addEventListener('change', () => { if (state.triMesh) requestUnfold(); }));
 
@@ -380,6 +434,7 @@ $('paper').addEventListener('change', () => {
     $('distinguishRow').hidden = !dashed;
     renderPreview();
   }));
+$('paperNumbers').addEventListener('change', renderPreview);
 
 $('editCuts').addEventListener('change', updateEditMode);
 $('clearCuts').addEventListener('click', () => {
@@ -424,6 +479,49 @@ viewer.setEdgePicker((key) => {
   log(`辺 ${key} は別経路で接続済みのため折り線にできません（合わせ目）。`, 'plain');
 });
 
+const mobileTabs = [...document.querySelectorAll('.mobile-tabs [role="tab"]')];
+const mobilePanels = [$('settingsPanel'), $('panel3d'), $('panel2d')];
+function selectMobileTab(tab, focus = false) {
+  mobileTabs.forEach((item) => {
+    const selected = item === tab;
+    item.setAttribute('aria-selected', String(selected));
+    item.tabIndex = selected ? 0 : -1;
+  });
+  mobilePanels.forEach((panel) => {
+    panel.hidden = panel.id !== tab.getAttribute('aria-controls');
+  });
+  if (focus) tab.focus();
+}
+function syncResponsivePanels() {
+  if (matchMedia('(max-width: 760px)').matches) {
+    selectMobileTab(mobileTabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || mobileTabs[0]);
+  } else {
+    mobilePanels.forEach((panel) => { panel.hidden = false; });
+  }
+}
+mobileTabs.forEach((tab, index) => {
+  tab.addEventListener('click', () => selectMobileTab(tab));
+  tab.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % mobileTabs.length;
+    if (event.key === 'ArrowLeft') next = (index - 1 + mobileTabs.length) % mobileTabs.length;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = mobileTabs.length - 1;
+    selectMobileTab(mobileTabs[next], true);
+  });
+});
+matchMedia('(max-width: 760px)').addEventListener('change', syncResponsivePanels);
+$('mobilePrimary').addEventListener('click', () => {
+  if (state.layout && !state.processing) downloadSVG();
+  else requestUnfold();
+});
+$('mobilePrint').addEventListener('click', () => { setPageStyle(); window.print(); });
+
 // 初期表示: 立方体
+updateModeUI();
+syncResponsivePanels();
+updateOutputState();
 loadTriangleSoup(cube(40), 'cube');
 window.__state = state; // デバッグ/テスト用
