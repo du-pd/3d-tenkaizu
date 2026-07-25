@@ -13,7 +13,10 @@
 ここで一区切り＝**v1.0.0 リリース**。以降のアップデートは従来ルールで版を上げる:
 作業ブランチ → PR → main マージ → CI(テスト)→ Pages 自動デプロイ。併せて
 `package.json` の version・README の開発段階・アプリ表示(index.htmlのv表記)・ここの履歴を更新。
-Gitタグ `v1.0.0` を main に付与済み。
+版は package.json / README / アプリ表示(index.html) / 本ログに記録済み。
+Gitタグ `v1.0.0` は未付与（この環境のプロキシがタグpushを拒否/MCPにタグ作成APIなし）。
+付けたい場合はメンテナが手動で: `git tag v1.0.0 <release commit> && git push origin v1.0.0`
+（対象コミット = PR #14 のマージ `6e6f0ea`）。
 
 ## 現在の状態（2026-07-25 時点）
 - v0.1〜v0.3 + レーザー出力(SVG/DXF) + レビュー対応 + ポスター分割 + 手動編集(切る/繋ぐ)
