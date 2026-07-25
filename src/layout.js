@@ -263,8 +263,12 @@ function packA4(partData, opts) {
   for (const pd of sorted) {
     const w = pd.bbox.w, h = pd.bbox.h;
     if (allowPosterTiling && (w > usableW || h > usableH)) {
-      const cols = Math.max(1, Math.ceil(w / usableW));
-      const rows = Math.max(1, Math.ceil(h / usableH));
+      // 隣り合うタイルを overlap(重ね代) ぶん重ねる。切ってから重ねて貼れる。
+      const overlap = Math.max(0, Math.min(opts.posterOverlap ?? 10, usableW * 0.5, usableH * 0.5));
+      const stepW = Math.max(1, usableW - overlap);
+      const stepH = Math.max(1, usableH - overlap);
+      const cols = w > usableW ? Math.max(1, Math.ceil((w - overlap) / stepW)) : 1;
+      const rows = h > usableH ? Math.max(1, Math.ceil((h - overlap) / stepH)) : 1;
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
           posterTiles++;
@@ -272,11 +276,12 @@ function packA4(partData, opts) {
             parts: [{
               pd,
               offset: [
-                margin - pd.bbox.minX - col * usableW,
-                margin - pd.bbox.minY - row * usableH,
+                margin - pd.bbox.minX - col * stepW,
+                margin - pd.bbox.minY - row * stepH,
               ],
             }],
             clipRect: { x: margin, y: margin, w: usableW, h: usableH },
+            overlap,
             tile: {
               col, row, cols, rows,
               index: row * cols + col + 1,

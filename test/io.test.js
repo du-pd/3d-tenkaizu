@@ -134,6 +134,25 @@ console.log('== 単一大型パーツのポスター分割 ==');
   check('分割SVGにクリップパスが入る', paperSvgs.every((svg) => svg.includes('<clipPath')));
   const tiledDxf = toDXF(Ltiled);
   check('分割時のDXFも生成できる', tiledDxf.includes('SECTION') && tiledDxf.includes('ENTITIES'));
+
+  // 重ね代（貼り代）とトンボ
+  check('全ページに overlap 値が入る', Ltiled.pages.every((p) => typeof p.overlap === 'number' && p.overlap > 0));
+  // 同じ行で隣り合う列のオフセット差 = usableW - overlap（重なっている）
+  const usableW = 80 - 20; // pageW - margin*2
+  const row0 = Ltiled.pages.filter((p) => p.tile.row === 0).sort((a, b) => a.tile.col - b.tile.col);
+  if (row0.length >= 2) {
+    const dx = row0[0].parts[0].offset[0] - row0[1].parts[0].offset[0]; // = stepW
+    check('隣接タイルは重ね代ぶん重なる(step=usableW-overlap)',
+      Math.abs(dx - (usableW - row0[0].overlap)) < 1e-6, `dx=${dx} step=${usableW - row0[0].overlap}`);
+    check('step < usableW（＝重なりがある）', dx < usableW - 1e-9, `${dx} < ${usableW}`);
+  }
+  check('SVGにトンボ(registrationレイヤー)が入る', paperSvgs.every((svg) => svg.includes('id="registration"')));
+  check('SVGにタイル位置ラベル(行・列)が入る', paperSvgs.every((svg) => /行\d+・列\d+/.test(svg)));
+
+  // 重ね代を大きくするとタイル(ページ)が増える
+  const L0 = buildLayout(m, r, { tabs: true, pageW: 80, pageH: 80, scale: 2.4, posterOverlap: 0 });
+  const L20 = buildLayout(m, r, { tabs: true, pageW: 80, pageH: 80, scale: 2.4, posterOverlap: 20 });
+  check('重ね代を増やすとページ数が増える', L20.pages.length > L0.pages.length, `ov0=${L0.pages.length} ov20=${L20.pages.length}`);
 }
 
 console.log(`\n=== 合計: ${pass} ok, ${fail} fail ===`);
