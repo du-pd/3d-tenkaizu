@@ -177,6 +177,7 @@ async function unfoldNow() {
       engrave: $('engrave').checked,
       pageW: page.pageW,
       pageH: page.pageH,
+      posterOverlap: Math.max(0, parseFloat($('posterOverlap').value) || 0),
     };
 
     let autofit = false;
@@ -204,8 +205,10 @@ async function unfoldNow() {
     log(`用紙: ${page.pageW} × ${page.pageH} mm / ページ数: ${layout.pages.length}${scale !== 1 ? ` / スケール ×${scale.toFixed(3)}` : ''}`);
     if (autofit)
       log('印刷範囲に自動フィットで縮小しました。この出力は実寸ではありません（印刷寸法は指定値と異なります）。', 'warn');
-    else if (layout.posterTiles)
-      log(`単一パーツが用紙を超えたため、${layout.pages.length} ページのポスター分割で出力します。貼り合わせ位置はページ順に合わせてください。`, 'warn');
+    else if (layout.posterTiles) {
+      const ov = Math.max(0, parseFloat($('posterOverlap').value) || 0);
+      log(`単一パーツが用紙を超えたため、${layout.pages.length} ページのポスター分割で出力します（重ね代 ${ov}mm・トンボ付き）。各シートを四隅のトンボで断裁し、重ね代ぶん重ねて貼り合わせてください。`, 'warn');
+    }
     else if (layout.overflow)
       log('警告: 印刷範囲に収まらないパーツがあります。「印刷範囲に自動フィット」をオンにするか、目標寸法を小さくしてください。', 'warn');
     if (layout.tabStats && (layout.tabStats.shortened || layout.tabStats.deleted))
@@ -352,7 +355,7 @@ $('dlDxf').addEventListener('click', downloadDXF);
 $('printBtn').addEventListener('click', () => { setPageStyle(); window.print(); });
 document.querySelectorAll('input[name="mode"]').forEach((r) =>
   r.addEventListener('change', renderPreview));
-['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH'].forEach((id) =>
+['mergeAngle', 'tabHeight', 'clearance', 'targetHeight', 'useTabs', 'engrave', 'autofit', 'pageW', 'pageH', 'posterOverlap'].forEach((id) =>
   $(id).addEventListener('change', () => { if (state.triMesh) requestUnfold(); }));
 
 // 用紙サイズ切替: カスタム時のみW×H入力を表示

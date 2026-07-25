@@ -207,7 +207,37 @@ function pageBody(page, pageIndex, body) {
   if (!page.clipRect) return body;
   const { x, y, w, h } = page.clipRect;
   const clipId = `clip_page_${pageIndex + 1}`;
-  return `<defs><clipPath id="${clipId}"><rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}"/></clipPath></defs><g clip-path="url(#${clipId})">${body}</g>`;
+  const clipped = `<defs><clipPath id="${clipId}"><rect x="${fmt(x)}" y="${fmt(y)}" width="${fmt(w)}" height="${fmt(h)}"/></clipPath></defs><g clip-path="url(#${clipId})">${body}</g>`;
+  // トンボ・重ね代ガイドはクリップの外に描く（切られないように）
+  return clipped + posterMarks(page);
+}
+
+// ポスター分割ページのトンボ（四隅）・重ね代の境界線・タイル位置ラベルを生成する。
+// 組み立て手順: 各シートを四隅のトンボで断裁 → 隣同士を重ね代ぶん重ねて貼る。
+function posterMarks(page) {
+  if (!page.tile || !page.clipRect) return '';
+  const { x, y, w, h } = page.clipRect;
+  const ov = page.overlap || 0;
+  const t = page.tile;
+  const c = '#00A000';       // ガイド色（切断/折りと区別できる緑）
+  const ml = 4;              // トンボの長さ(mm)
+  const s = [];
+  const seg = (x1, y1, x2, y2, extra = '') => s.push(`<line x1="${fmt(x1)}" y1="${fmt(y1)}" x2="${fmt(x2)}" y2="${fmt(y2)}" stroke="${c}" stroke-width="0.2" ${extra}/>`);
+  // 四隅のトンボ（印刷範囲の角から外側へL字）
+  const corner = (cx, cy, sx, sy) => { seg(cx, cy, cx + sx * ml, cy); seg(cx, cy, cx, cy + sy * ml); };
+  corner(x, y, -1, -1); corner(x + w, y, 1, -1); corner(x, y + h, -1, 1); corner(x + w, y + h, 1, 1);
+  // 隣がある側に重ね代の境界線（破線）を引く。この線から外は隣ページと重複。
+  const dash = 'stroke-dasharray="2,1.5"';
+  if (ov > 0) {
+    if (t.col < t.cols - 1) seg(x + w - ov, y, x + w - ov, y + h, dash); // 右に隣
+    if (t.col > 0)          seg(x + ov, y, x + ov, y + h, dash);         // 左に隣
+    if (t.row < t.rows - 1) seg(x, y + h - ov, x + w, y + h - ov, dash); // 下に隣
+    if (t.row > 0)          seg(x, y + ov, x + w, y + ov, dash);         // 上に隣
+  }
+  // タイル位置ラベル（組み立て順の手掛かり）
+  const label = `行${t.row + 1}・列${t.col + 1} / 全 ${t.rows}行×${t.cols}列` + (ov > 0 ? `（重ね代 ${fmt(ov)}mm）` : '');
+  s.push(`<text x="${fmt(x + 1)}" y="${fmt(y - 1)}" font-size="3" fill="${c}">${label}</text>`);
+  return `<g id="registration">${s.join('')}</g>`;
 }
 
 // ---- DXF (R12 / AC1009 ASCII): レーザー/CAD向け。レイヤー CUT / SCORE に分離 ----
